@@ -265,9 +265,15 @@ The registry serves two other roles by matching contracts from other packages
 - **`List(ctx, objectType, pattern, limit)` is a `scope.ObjectLister`** —
   byte-for-byte the seam the [implicit/exclusive scope resolvers](scopes.md) left
   open, so a `*Registry` is passed as `engine.ScopeDeps{Lister: reg}`. It queries
-  the provider, bounds the result by the pattern and the limit
-  (`DefaultListLimit` = 1000), and opportunistically warms the cache with each
-  returned object's metadata.
+  the provider, bounds the result by the pattern and the limit, and
+  opportunistically warms the cache with each returned object's metadata.
+  A **positive caller limit is honoured verbatim**, however large;
+  `DefaultListLimit` (= 1000) is the value substituted for a limit `<= 0`, not a
+  ceiling. The caller is the authority because the bound on a decision path is set
+  one layer up — the engine's configured enumerate limit, which every network
+  surface sits behind. A direct Go embedder calling
+  `reg.List(ctx, t, pat, 1_000_000)` receives a million identities; the library is
+  sharp-edged on purpose.
 
 Two enumeration variants sit beside the bounded `List`: `Identifiers` returns the
 **complete, unbounded** id set (sorted, for a stable diff — use it to expand an

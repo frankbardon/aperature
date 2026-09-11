@@ -21,11 +21,12 @@ var _ scope.ObjectLister = (*Registry)(nil)
 // fakeProvider is a host ObjectProvider backed by an in-memory table. It counts
 // Fetch/Query calls so tests can prove a cache hit avoids the provider.
 type fakeProvider struct {
-	mu       sync.Mutex
-	objects  map[string]Metadata // identity string -> metadata
-	fetches  int64               // atomic
-	queries  int64               // atomic
-	failNext error
+	mu        sync.Mutex
+	objects   map[string]Metadata // identity string -> metadata
+	fetches   int64               // atomic
+	queries   int64               // atomic
+	lastLimit int                 // the Filter.Limit the last Query actually saw
+	failNext  error
 }
 
 func newFakeProvider() *fakeProvider {
@@ -59,10 +60,11 @@ func (p *fakeProvider) List(ctx context.Context) ([]Object, error) {
 	return p.Query(ctx, Filter{})
 }
 
-func (p *fakeProvider) Query(_ context.Context, _ Filter) ([]Object, error) {
+func (p *fakeProvider) Query(_ context.Context, f Filter) ([]Object, error) {
 	atomic.AddInt64(&p.queries, 1)
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.lastLimit = f.Limit
 	out := make([]Object, 0, len(p.objects))
 	for s, md := range p.objects {
 		out = append(out, Object{ID: identity.MustParse(s), Metadata: md})
@@ -243,6 +245,80 @@ func TestRegistryAsScopeLister(t *testing.T) {
 	}
 	if p.fetchCount() != before {
 		t.Fatalf("List did not warm the cache: Fetch triggered a provider call")
+	}
+}
+
+// List honours a positive caller limit rather than clamping it back to
+// DefaultListLimit. The caller is the authority: the ceiling on a decision path
+// is the engine's configured enumerate limit, one layer above this package.
+func TestRegistryListHonorsAPositiveLimit(t *testing.T) {
+	const want = DefaultListLimit + 50
+
+	p := newFakeProvider()
+	for i := 1; i <= want+25; i++ {
+		p.put(fmt.Sprintf("account:acme/document:%d", i), Metadata{"n": i})
+	}
+	// One object outside the pattern, so the re-check is still exercised at a
+	// limit the old clamp would never have reached.
+	p.put("account:other/document:9", Metadata{"n": 9})
+
+	reg := NewRegistry()
+	reg.MustRegister("document", p)
+
+	pat := identity.MustParsePattern("account:acme/document:*")
+	ids, err := reg.List(context.Background(), "document", pat, want)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(ids) != want {
+		t.Fatalf("listed %d identities, want the caller's limit of %d", len(ids), want)
+	}
+	for _, id := range ids {
+		if !pat.Matches(id) {
+			t.Fatalf("listed identity %s does not match the bounding pattern", id)
+		}
+	}
+	// The provider SAW the caller's limit — the value propagates rather than
+	// being substituted here and truncated afterwards.
+	p.mu.Lock()
+	saw := p.lastLimit
+	p.mu.Unlock()
+	if saw != want {
+		t.Fatalf("provider saw limit %d, want the caller's %d", saw, want)
+	}
+	// Cache warming still holds at the raised bound.
+	before := p.fetchCount()
+	if _, err := reg.Fetch(context.Background(), ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if p.fetchCount() != before {
+		t.Fatalf("List did not warm the cache: Fetch triggered a provider call")
+	}
+}
+
+// A non-positive limit still means DefaultListLimit — that half of the contract
+// is unchanged, and it is what stops an unasked-for enumeration being unbounded.
+func TestRegistryListDefaultsANonPositiveLimit(t *testing.T) {
+	p := newFakeProvider()
+	for i := 1; i <= DefaultListLimit+50; i++ {
+		p.put(fmt.Sprintf("account:acme/document:%d", i), Metadata{"n": i})
+	}
+	reg := NewRegistry()
+	reg.MustRegister("document", p)
+
+	pat := identity.MustParsePattern("account:acme/document:*")
+	ids, err := reg.List(context.Background(), "document", pat, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(ids) != DefaultListLimit {
+		t.Fatalf("listed %d identities, want the DefaultListLimit default of %d", len(ids), DefaultListLimit)
+	}
+	p.mu.Lock()
+	saw := p.lastLimit
+	p.mu.Unlock()
+	if saw != DefaultListLimit {
+		t.Fatalf("provider saw limit %d, want the substituted %d", saw, DefaultListLimit)
 	}
 }
 

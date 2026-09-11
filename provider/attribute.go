@@ -197,7 +197,8 @@ type AttributeFilter struct {
 	// MatchFields is the shared implementation.
 	Fields map[string]any
 	// Limit bounds the number of results; <= 0 means the provider's own default.
-	// The registry clamps it to DefaultListLimit regardless.
+	// The registry re-enforces it on what comes back, honouring a positive value
+	// verbatim and substituting DefaultListLimit for a non-positive one.
 	Limit int
 }
 
