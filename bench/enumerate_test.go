@@ -68,60 +68,62 @@ import (
 //
 //	candidates | bound |    ns/op   | ids | ns/candidate | allocs/op |   B/op
 //	-----------+-------+------------+-----+--------------+-----------+----------
-//	        10 |   —   |     54 724 |  10 |        5 472 |       596 |   45 060
-//	       100 |   —   |    567 891 | 100 |        5 679 |     5 679 |  442 772
-//	     1 000 |   —   |  6 317 880 |1 000|        6 318 |    56 133 |4 444 912
-//	     2 000 |   —   |  5 929 466 |1 000|        5 929 |    56 136 |4 478 722
-//	     1 000 | 2 000 |  5 743 803 |1 000|        5 744 |    56 127 |4 444 822
-//	     2 000 | 2 000 | 11 638 062 |2 000|        5 819 |   112 176 |8 964 388
-//	     4 000 | 2 000 | 12 005 617 |2 000|        6 003 |   112 162 |9 025 695
+//	        10 |   —   |     44 359 |  10 |        4 436 |       496 |   39 311
+//	       100 |   —   |    436 078 | 100 |        4 361 |     4 679 |  385 291
+//	     1 000 |   —   |  5 058 189 |1 000|        5 058 |    46 137 |3 870 603
+//	     2 000 |   —   |  4 733 331 |1 000|        4 733 |    46 141 |3 904 836
+//	     1 000 | 2 000 |  4 543 591 |1 000|        4 544 |    46 131 |3 870 590
+//	     2 000 | 2 000 | 11 565 568 |2 000|        5 783 |    92 188 |7 816 610
+//	     4 000 | 2 000 |  9 170 151 |2 000|        4 585 |    92 168 |7 876 370
 //
 // And the rule half in isolation (BenchmarkEnumerateRuleBackedRuleEval, 1 000
 // rules.Engine.Selected calls with no engine around them), same run:
 //
-//	2 348 ns/eval, 17 allocs/eval, ~1 297 B/eval
+//	1 328 ns/eval, 12 allocs/eval, ~1 009 B/eval
 //
-// Those absolutes are one machine on one day, and that day was loaded: the same
-// RuleEval benchmark re-run on the same machine while quiet measured 1 500
-// ns/eval, against 2 348 here and 1 235 when these benchmarks first landed. Read
-// the table's INTERNAL ratios, which is what it is for.
+// Wall-clock here is one machine on one day: before any code changed, this same
+// RuleEval benchmark measured 2 348 ns/eval on a loaded machine and 1 500 on the
+// same machine quiet. Read the table's INTERNAL ratios, which is what it is for.
 //
-// The allocation counters do not move with load, and those did change: 14 -> 17
-// allocs/eval, ~976 -> ~1 296 B/eval. All of it is the principal and account
-// FLOOR BAGS, added in attribute-providers (232e123, eba23be) and built once per
-// evaluation in rules/engine.go. The per-evaluation copy is the security
+// The allocation counters do not move with load, and they have moved twice. They
+// rose 14 -> 17 allocs/eval (~976 -> ~1 296 B) when attribute-providers landed
+// (232e123, eba23be): the principal and account FLOOR BAGS, built once per
+// evaluation in rules/engine.go. They then fell to 12 (~1 009 B) when the
+// compiled-rule cache stopped allocating its own key — the key is now a raw
+// [32]byte and the render goes through a pooled buffer, with the canonical
+// source materialised only on a MISS. The per-evaluation floor-bag copy is the
+// security
 // property — a resolver bag may be cached and shared and is read-only, so the
 // floor is stamped into a copy, never into it. Three allocations is the price.
 // There is no unexplained drift here to chase.
 //
 // Read five things off it:
 //
-//  1. **~5.7–6.3 µs and ~56 allocations per RETURNED id**, flat across every row
+//  1. **~4.4–5.8 µs and ~46 allocations per RETURNED id**, flat across every row
 //     at every bound. The cost is LINEAR in the result size, with no super-linear
 //     term hiding in the resolver at the raised bound either.
 //  2. **Doubling the bound doubles the cost, and no more than doubles it.**
-//     1 000 ids -> 2 000 ids is 6.32 ms -> 11.64 ms (1.84x), 56 133 -> 112 176
-//     allocations (2.00x), 4.44 MB -> 8.96 MB (2.02x). Budget a raise as
-//     proportional: roughly **4.5 KB and 56 allocations of transient garbage per
-//     id the bound allows**, so a bound of 10 000 is a ~45 MB, ~58 ms
-//     enumeration.
+//     1 000 ids -> 2 000 ids is 46 137 -> 92 188 allocations (2.00x) and
+//     3.87 MB -> 7.82 MB (2.02x). Read those ratios off the allocation counters,
+//     not the clock: they are deterministic, where wall-clock on that row swung
+//     9.7-16.2 ms inside one -count=3 run. Budget a raise as proportional:
+//     roughly **3.9 KB and 46 allocations of transient garbage per id the bound
+//     allows**, so a bound of 10 000 is a ~39 MB enumeration.
 //  3. **Raising the bound is free until the population reaches it.** The
 //     1 000-candidate row at bound 2 000 costs what the same row costs
-//     unconfigured — 5.74 ms vs 6.32 ms, 56 127 vs 56 133 allocations, the same
-//     B/op to four digits. Configuring headroom a deployment does not use is not
-//     paid for.
+//     unconfigured — 46 131 vs 46 137 allocations, the same B/op to four digits.
+//     Configuring headroom a deployment does not use is not paid for.
 //  4. **The raised bound clamps exactly as the default one does.** 4 000
 //     candidates at bound 2 000 costs what 2 000 candidates at bound 2 000 costs
-//     (12.01 vs 11.64 ms, 112 162 vs 112 176 allocations); 2 000 candidates
-//     unconfigured costs what 1 000 do. Past the bound the extra objects are
+//     (92 168 vs 92 188 allocations); 2 000 candidates unconfigured costs what
+//     1 000 do. Past the bound the extra objects are
 //     never visited, so the worst case stays a constant a host can budget for —
 //     it is just a constant the operator now chooses.
-//  5. **The rule is ~55–60% of it.** Two evaluations per candidate at 2 348 ns is
-//     ~4.7 µs of the ~5.8–6.3 µs, and 34 of the ~56 allocations. The rest is the
-//     decision engine's own per-candidate work. So halving the rule cost is worth
-//     about a third of the total, and the per-decision AST re-walk
-//     (BenchmarkRuleCompileCached) is the largest single line item inside the
-//     rule half.
+//  5. **The rule is ~50–55% of it.** Two evaluations per candidate at 1 328 ns is
+//     ~2.7 µs of the ~4.4–5.8 µs, and 24 of the ~46 allocations. The rest is the
+//     decision engine's own per-candidate work. The largest remaining line item
+//     inside the rule half is the principal and account floor bags, which are a
+//     security property and not a cost to remove.
 //
 // One asymmetry the table does not show, worth knowing before reading a caller's
 // EnumerateRequest.Limit as a cost knob: a smaller Limit shortens only the

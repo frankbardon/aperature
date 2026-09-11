@@ -508,20 +508,20 @@ the option, never a constant read back out, so the number really travels engine
 clamp → scope member gather → provider list.
 
 `BenchmarkEnumerateRuleBacked`, Apple M1 Max (10 cores), go1.26.5 darwin/arm64,
-`-benchtime=2s -count=3`, medians of 3, audit off:
+`-benchtime=1s -count=3`, medians of 3, audit off:
 
 | candidates | bound | ns/op | ns/candidate | allocs/op | B/op | ids returned |
 |---:|---:|---:|---:|---:|---:|---:|
-| 10 | — | 54 724 | 5 472 | 596 | 45 060 | 10 |
-| 100 | — | 567 891 | 5 679 | 5 679 | 442 772 | 100 |
-| 1 000 | — | 6 317 880 | 6 318 | 56 133 | 4 444 912 | 1 000 |
-| 2 000 | — | 5 929 466 | 5 929 | 56 136 | 4 478 722 | 1 000 |
-| 1 000 | 2 000 | 5 743 803 | 5 744 | 56 127 | 4 444 822 | 1 000 |
-| 2 000 | 2 000 | 11 638 062 | 5 819 | 112 176 | 8 964 388 | 2 000 |
-| 4 000 | 2 000 | 12 005 617 | 6 003 | 112 162 | 9 025 695 | 2 000 |
+| 10 | — | 44 359 | 4 436 | 496 | 39 311 | 10 |
+| 100 | — | 436 078 | 4 361 | 4 679 | 385 291 | 100 |
+| 1 000 | — | 5 058 189 | 5 058 | 46 137 | 3 870 603 | 1 000 |
+| 2 000 | — | 4 733 331 | 4 733 | 46 141 | 3 904 836 | 1 000 |
+| 1 000 | 2 000 | 4 543 591 | 4 544 | 46 131 | 3 870 590 | 1 000 |
+| 2 000 | 2 000 | 11 565 568 | 5 783 | 92 188 | 7 816 610 | 2 000 |
+| 4 000 | 2 000 | 9 170 151 | 4 585 | 92 168 | 7 876 370 | 2 000 |
 
 And the rule half in isolation (`BenchmarkEnumerateRuleBackedRuleEval`, 1 000
-`Selected` calls), same run: **2 348 ns/eval, 17 allocs/eval, ~1 297 B/eval**.
+`Selected` calls), same run: **1 328 ns/eval, 12 allocs/eval, ~1 009 B/eval**.
 
 Those absolutes are one machine on one day, and that day was a noisy one: the
 same `RuleEval` benchmark re-run later on the same quiet machine measured **1 500
@@ -529,14 +529,15 @@ ns/eval**, against **2 348** above and **1 235** when these figures were first
 committed. Timing here tracks whatever else the machine is doing, so read the
 **internal ratios** between rows rather than the wall-clock numbers.
 
-The allocation counters do not drift — they are deterministic, and they did move:
-**14 → 17 allocs/eval, ~976 → ~1 296 B/eval**. That growth is fully accounted
-for. Bisecting the merges since it was measured puts all of it in
-`attribute-providers` (PR #17), in two commits: `232e123` (E1-S3) added one
-allocation, and `eba23be` (E2-S1) added two more and ~304 B. They are the
+The allocation counters do not drift — they are deterministic, and they have
+moved twice. They rose **14 → 17 allocs/eval, ~976 → ~1 296 B/eval** when
+`attribute-providers` (PR #17) landed, in two commits: `232e123` (E1-S3) added
+one allocation and `eba23be` (E2-S1) added two more and ~304 B. They are the
 `principal` and `account` **floor bags**, built per evaluation in
 `rules/engine.go` — `make(map[string]any, len(bag)+2)` plus a `maps.Copy`, once
-each.
+each. They then fell to **12 allocs/eval, ~1 009 B/eval** when the compiled-rule
+cache stopped allocating the key it looks up with (see "The cache key is not free"
+below).
 
 That per-evaluation copy is the security property, not an oversight. A resolver's
 bag may be cached and shared across a tenancy and is read-only, so the floor is
@@ -549,29 +550,57 @@ So: the rule-evaluation path really did get ~21% more allocations and ~33% more
 transient bytes on 2026-08-26, deliberately and for a stated reason. There is no
 unexplained drift to chase.
 
-- **~5.7–6.3 µs and ~56 allocations per returned id**, flat across three orders
+### The cache key is not free
+
+Rule compilation is lazily cached and the cache is hit on essentially every
+evaluation — the compiler does not appear in an allocation profile of the
+evaluation path at all. What did appear was the cost of *asking*: rendering the
+AST to canonical source, allocating that string, hashing it, and hex-encoding the
+digest into a map key, on every call. Roughly 35% of the path's allocations, on a
+path whose actual rule evaluation is about 11%.
+
+The cache key is now the raw `[32]byte` digest, which is directly map-comparable
+and allocates nothing; the hex string remains what `Compiled.Hash()` returns and
+is computed once per compilation. The render goes into a pooled buffer and the
+digest is taken over its bytes, so the canonical source is materialised as a
+string only on a **miss**.
+
+**What is deliberately not done: memoising the rendered source against the node.**
+The cache is content-addressed on purpose. `rules.Node` is an exported struct of
+exported fields, nothing forbids a host mutating one, and a mutated node must
+render differently, miss, and recompile so the edit takes effect. A memo would buy
+a rule edit that silently keeps authorizing under its old program — and it would
+pass every other test in the package. `TestAMutatedNodeRecompiles` pins that, and
+was verified to fail against exactly that memo.
+
+The ~45% of per-evaluation allocations that remain are the floor bags above. Those
+are a security property, not a cost to remove.
+
+- **~4.4–5.8 µs and ~46 allocations per returned id**, flat across three orders
   of magnitude *and* across both bounds — linear in the result size, with no
   super-linear term in the resolver at the raised bound either.
 - **Doubling the bound doubles the cost, and no more than doubles it.** 1 000
-  ids → 2 000 ids is 6.32 ms → 11.64 ms (1.84×), 56 133 → 112 176 allocations
-  (2.00×), 4.44 MB → 8.96 MB (2.02×). Budget a raise as proportional: roughly
-  **4.5 KB and 56 allocations of transient garbage per id the bound allows**, so
-  a bound of 10 000 is a ~45 MB, ~58 ms enumeration.
+  ids → 2 000 ids is 46 137 → 92 188 allocations (2.00×) and 3.87 MB → 7.82 MB
+  (2.02×). Read the ratios off the allocation counters rather than the clock —
+  they are deterministic, where wall-clock on this row swung 9.7–16.2 ms across a
+  single `-count=3` run. Budget a raise as proportional: roughly **3.9 KB and 46
+  allocations of transient garbage per id the bound allows**, so a bound of
+  10 000 is a ~39 MB enumeration.
 - **Raising the bound is free until the population reaches it.** The
-  1 000-candidate row at bound 2 000 costs what it costs unconfigured — 5.74 ms
-  vs 6.32 ms, 56 127 vs 56 133 allocations, the same `B/op` to four digits.
-  Headroom a deployment does not use is not paid for.
+  1 000-candidate row at bound 2 000 costs what it costs unconfigured — 46 131 vs
+  46 137 allocations, the same `B/op` to four digits. Headroom a deployment does
+  not use is not paid for.
 - **The raised bound clamps exactly as the default one does.** 4 000 candidates
-  at bound 2 000 costs what 2 000 at bound 2 000 costs (12.01 vs 11.64 ms,
-  112 162 vs 112 176 allocations), and 2 000 candidates unconfigured costs what
-  1 000 do. Past the bound the extra objects are never visited, so the worst case
+  at bound 2 000 costs what 2 000 at bound 2 000 costs (92 168 vs 92 188
+  allocations), and 2 000 candidates unconfigured costs what 1 000 do. Past the bound the extra objects are never visited, so the worst case
   stays a constant a host can budget for — it is just a constant the operator now
   chooses. `TestEnumerateRuleBackedStaysBounded` pins that ungated, at the
   default bound and at a raised one.
-- **The rule is ~55–60% of it.** Two evaluations at 2 348 ns is ~4.7 µs of the
-  ~5.8–6.3 µs and 34 of the ~56 allocations; the rest is the decision engine's
-  own per-candidate work. Inside the rule half the largest line item is the
-  per-decision AST re-walk (`BenchmarkRuleCompileCached`).
+- **The rule is ~50–55% of it.** Two evaluations at 1 328 ns is ~2.7 µs of the
+  ~4.4–5.8 µs and 24 of the ~46 allocations; the rest is the decision engine's
+  own per-candidate work. Inside the rule half the largest remaining line item is
+  the `principal` and `account` floor bags, which are a security property and not
+  a cost to remove.
 - **A bound-limit enumeration is ~6.3 ms at the default bound**, roughly 1 000× a
   cached `Check`. That is arithmetic (it *is* ~2 000 evaluations plus 1 000
   decisions), but it makes rule-backed `Enumerate` an interactive operation, not

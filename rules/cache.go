@@ -62,7 +62,7 @@ type compiledCache struct {
 	mu      sync.RWMutex
 	ttl     time.Duration
 	clock   Clock
-	entries map[string]cacheEntry
+	entries map[[32]byte]cacheEntry
 
 	hits      atomic.Uint64
 	misses    atomic.Uint64
@@ -81,7 +81,7 @@ func newCompiledCache(ttl time.Duration, clock Clock) *compiledCache {
 	return &compiledCache{
 		ttl:     ttl,
 		clock:   clock,
-		entries: make(map[string]cacheEntry),
+		entries: make(map[[32]byte]cacheEntry),
 	}
 }
 
@@ -91,9 +91,9 @@ func newCompiledCache(ttl time.Duration, clock Clock) *compiledCache {
 // The hit path holds only the read lock; the counter bump is atomic. The write
 // lock is taken solely when the map may have to change (an expired entry to
 // delete) or when a second look is needed because the first read found nothing.
-func (c *compiledCache) get(hash string) (*Compiled, bool) {
+func (c *compiledCache) get(key [32]byte) (*Compiled, bool) {
 	c.mu.RLock()
-	e, ok := c.entries[hash]
+	e, ok := c.entries[key]
 	c.mu.RUnlock()
 	if ok && !c.expired(e) {
 		c.hits.Add(1)
@@ -102,12 +102,12 @@ func (c *compiledCache) get(hash string) (*Compiled, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// Re-read under the write lock: another goroutine may have refreshed it.
-	if e, ok := c.entries[hash]; ok {
+	if e, ok := c.entries[key]; ok {
 		if !c.expired(e) {
 			c.hits.Add(1)
 			return e.compiled, true
 		}
-		delete(c.entries, hash)
+		delete(c.entries, key)
 		c.evictions.Add(1)
 	}
 	c.misses.Add(1)
@@ -121,7 +121,7 @@ func (c *compiledCache) put(compiled *Compiled) {
 		expiresAt = c.clock.Now().Add(c.ttl)
 	}
 	c.mu.Lock()
-	c.entries[compiled.hash] = cacheEntry{compiled: compiled, expiresAt: expiresAt}
+	c.entries[compiled.key] = cacheEntry{compiled: compiled, expiresAt: expiresAt}
 	c.mu.Unlock()
 }
 
@@ -132,13 +132,13 @@ func (c *compiledCache) expired(e cacheEntry) bool {
 	return !c.clock.Now().Before(e.expiresAt)
 }
 
-// invalidate drops a single cached entry by hash, reporting whether one was
+// invalidate drops a single cached entry by cache key, reporting whether one was
 // present.
-func (c *compiledCache) invalidate(hash string) bool {
+func (c *compiledCache) invalidate(key [32]byte) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.entries[hash]; ok {
-		delete(c.entries, hash)
+	if _, ok := c.entries[key]; ok {
+		delete(c.entries, key)
 		c.evictions.Add(1)
 		return true
 	}
@@ -150,7 +150,7 @@ func (c *compiledCache) clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.evictions.Add(uint64(len(c.entries)))
-	c.entries = make(map[string]cacheEntry)
+	c.entries = make(map[[32]byte]cacheEntry)
 }
 
 // stats samples the counters and the entry count. Each counter is read

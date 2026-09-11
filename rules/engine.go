@@ -1,10 +1,13 @@
 package rules
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	aerr "github.com/frankbardon/aperture/errors"
@@ -539,21 +542,43 @@ func (e *Engine) compile(n *Node) (*Compiled, error) {
 	if err := n.Validate(); err != nil {
 		return nil, err
 	}
-	src, err := n.Expr()
-	if err != nil {
+	// The cache is CONTENT-ADDRESSED: the key is the hash of what this AST
+	// renders to right now, so an AST a host mutated in place renders
+	// differently, misses, and recompiles. That is a correctness property, not
+	// an accident — rules.Node is an exported struct of exported fields and
+	// nothing forbids mutating one, and a rule edit that silently kept
+	// authorizing under its old program is the worst bug this package could
+	// have. So the render is NOT memoised against the node.
+	//
+	// It is made cheap instead. The buffer is pooled and reused, the digest is
+	// taken over its bytes, and the canonical source is materialised as a string
+	// only on a MISS — a hit happens on every evaluation, a miss once per
+	// distinct rule.
+	b := exprBufPool.Get().(*bytes.Buffer)
+	defer func() {
+		b.Reset()
+		exprBufPool.Put(b)
+	}()
+	if err := n.render(b); err != nil {
 		return nil, err
 	}
-	hash := hashSource(src)
-	if c, ok := e.cache.get(hash); ok {
+	key := sha256.Sum256(b.Bytes())
+	if c, ok := e.cache.get(key); ok {
 		return c, nil
 	}
-	compiled, err := e.compiler.compileSource(src)
+	compiled, err := e.compiler.compileSource(b.String())
 	if err != nil {
 		return nil, err
 	}
 	e.cache.put(compiled)
 	return compiled, nil
 }
+
+// exprBufPool reuses the render buffers Engine.compile fills. Every evaluation
+// renders its rule to take the cache key, so this is one of the hottest
+// allocations in the package; the buffers are small, uniform and very
+// short-lived, which is exactly the shape a pool suits.
+var exprBufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
 // metadata fetches object's metadata, or returns an empty map when no fetcher is
 // configured (rules that read only principal/action still evaluate).
