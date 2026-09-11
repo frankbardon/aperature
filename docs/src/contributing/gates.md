@@ -95,6 +95,49 @@ driver-value type switch and `mappedDriverTypes` disagree. Adding a case to one
 half and not the other is build-red on purpose. `CLAUDE.md` carries the full
 change → required-update → enforcing-test table.
 
+### The book's own links are gated
+
+Two more ordinary Go tests, in `internal/docsgate`, keep this book honest. They
+need no network and no mdBook, so `make test` already runs them:
+
+```bash
+go test ./internal/docsgate/
+```
+
+| Gate | Enforces | Trips when you… |
+|---|---|---|
+| **`TestEveryBookLinkResolves`** | Every relative link in `docs/src` names a file that exists **and** a heading anchor that page actually emits. | Link to a page that moved, or to a `#section` mdBook does not generate. |
+| **`TestEveryBookPageIsInTheSummary`** | `SUMMARY.md` and the `docs/src` tree agree in **both** directions. | Add a page without listing it (mdBook would not build it), or list a chapter with no file behind it. |
+
+The anchor half is the one worth knowing about, because a wrong anchor is
+**silent**: the file resolves, the browser finds no such id, and the reader lands
+at the top of the page as if nothing happened. That is not hypothetical — two
+links in this book pointed at `#the-acting-principal-principal` for an anchor
+mdBook never emitted, and they were found by accident.
+
+mdBook derives an anchor by keeping alphanumerics, `_` and `-`, lowercasing
+them, turning whitespace into hyphens, and **dropping** everything else. Dropping
+rather than replacing is the part that surprises people, and it never collapses
+a run of hyphens:
+
+| Heading | Anchor |
+|---|---|
+| ``## The acting principal: `--principal` `` | `#the-acting-principal---principal` |
+| `# Build, test & lint gates` | `#build-test--lint-gates` |
+| ``## The `Filter.Fields` contract`` | `#the-filterfields-contract` |
+
+So a heading naming a CLI flag keeps the flag's dashes and gains one more from
+the space in front of it. Derive the anchor rather than guessing it, or copy it
+out of the built page — `make docs` writes `docs/book`, whose `<h2 id="…">`
+attributes are the ground truth the gate's derivation was validated against.
+
+The generated pages are covered like any other. If the gate fires on
+[`reference/cli.md`](../reference/cli.md) or
+[`reference/error-codes.md`](../reference/error-codes.md), fix the **generator**
+under `internal/docsgen` and re-run `make docs-gen` — both files say `DO NOT
+EDIT` and mean it. And if the gate fires on a link you believe is fine, fix the
+link or fix the heading: there is no exception list, deliberately.
+
 ## What CI does not gate
 
 The generated reference pages —
