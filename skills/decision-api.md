@@ -93,6 +93,13 @@ empty result that reads exactly like "no access" — so a misconfiguration degra
 to the documented default. Parse and validate an operator-supplied value at the
 surface that reads it, where an `APERTURE_CONFIG_INVALID` can still reach them.
 
+`aperture serve` is one such surface: `--enumerate-limit` /
+`APERTURE_ENUMERATE_LIMIT` (flag > env > default). It is declared as a
+`ucli.StringFlag` and parsed by the CLI on purpose — an `IntFlag` carrying the
+same env source lets urfave fail the command with its own **uncoded** parse
+error before the action runs, so a mistyped value would report something other
+than `APERTURE_CONFIG_INVALID`.
+
 `WithScopeResolution` stamps the configured bound into the `ScopeDeps` the engine
 keeps, as `Deps.MaxMembers`, whichever order the two options are passed in. The
 stamp is **unconditional** and overwrites a `MaxMembers` a caller-built

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +28,12 @@ import (
 // shutdownTimeout bounds how long serve waits for in-flight requests to drain on
 // SIGINT/SIGTERM before forcing the listener closed.
 const shutdownTimeout = 10 * time.Second
+
+// envEnumerateLimit is the environment variable --enumerate-limit reads when the
+// operator did not type the flag. It is named in the flag's usage text (see
+// TestServeFlagsNameTheirEnvVars), so the constant is the single spelling the
+// flag, the help output and the tests all share.
+const envEnumerateLimit = "APERTURE_ENUMERATE_LIMIT"
 
 // serveCommand is `aperture serve`: it hand-wires the dependency graph
 // (storage -> engine -> service -> HTTP server), boots a net/http server, and
@@ -58,6 +66,11 @@ func serveCommand() *ucli.Command {
 				Name:    "enforce-membership",
 				Usage:   "deny any decision whose principal is not a member of the active account, before grants are consulted (defence-in-depth; lets shared roles be reused across accounts safely)",
 				Sources: ucli.EnvVars("APERTURE_ENFORCE_MEMBERSHIP"),
+			},
+			&ucli.StringFlag{
+				Name:    "enumerate-limit",
+				Usage:   "maximum number of object ids one enumeration returns, and the ceiling a larger request Limit is clamped down to (default " + strconv.Itoa(engine.DefaultEnumerateLimit) + "; overrides " + envEnumerateLimit + ")",
+				Sources: ucli.EnvVars(envEnumerateLimit),
 			},
 			&ucli.BoolFlag{
 				Name:  "manage-accounts",
@@ -93,6 +106,10 @@ func serveCommand() *ucli.Command {
 // keeps cmd.IsSet meaning "the operator typed this flag" so flag-over-env
 // precedence is unambiguous. Both paths accept strconv.ParseBool's spellings, so
 // the two can never disagree about a value they both accept.
+//
+// --enumerate-limit makes the opposite trade against the same hazard: it KEEPS
+// its EnvVars source, because a string source has no parse for urfave to fail,
+// and does the number parsing itself. See enumerateLimit below.
 func managedEntities(cmd *ucli.Command) (service.ManagedEntities, error) {
 	managed, err := service.ManagedEntitiesFromEnv()
 	if err != nil {
@@ -113,6 +130,91 @@ func managedEntities(cmd *ucli.Command) (service.ManagedEntities, error) {
 	return managed, nil
 }
 
+// enumerateLimit resolves the enumeration bound this process serves with, in
+// precedence order: the engine's own DefaultEnumerateLimit, overridden by
+// APERTURE_ENUMERATE_LIMIT, overridden by a --enumerate-limit the operator
+// actually typed. ok is false when neither was given, which leaves the engine on
+// its documented default and serve behaving exactly as it did before the flag
+// existed.
+//
+// The flag is a StringFlag that carries an EnvVars source and is parsed HERE,
+// rather than a ucli.IntFlag that would parse itself. That is deliberate, and it
+// is the opposite trade from the --manage-* flags above, so both halves of the
+// reasoning belong together:
+//
+//   - An IntFlag with an env source hands the parse to urfave, which fails the
+//     command with its own uncoded "could not parse ... from environment" error
+//     before the action ever runs. APERTURE_ENUMERATE_LIMIT=banana would then
+//     report something other than APERTURE_CONFIG_INVALID — the same hazard that
+//     kept the --manage-* bools off EnvVars entirely.
+//   - A StringFlag has no parse to fail: urfave's value setter accepts any
+//     string verbatim, so a malformed value reaches this function and becomes a
+//     coded error the operator can act on.
+//
+// Keeping the EnvVars source (which --manage-* could not) is worth the manual
+// Atoi: precedence stays urfave's NATIVE flag > env > default — the env source is
+// applied only when the flag was not set on the command line — so there is no
+// hand-rolled resolution order here that could drift from the one every other
+// flag obeys. The --manage-* flags needed their own reader for a second reason
+// that does not apply to a string: an env-sourced BoolFlag also sets
+// hasBeenSet, which would make cmd.IsSet stop meaning "the operator typed this".
+//
+// This reads the value; it does not decide what the value MEANS. Clamping is the
+// engine's (engine.WithEnumerateLimit), which is why a parsed number is handed
+// over unexamined.
+func enumerateLimit(cmd *ucli.Command) (int, bool, error) {
+	raw := strings.TrimSpace(cmd.String("enumerate-limit"))
+	if raw == "" {
+		return 0, false, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		// The setting and the rejected value go in the MESSAGE, not only in the
+		// context map: nothing on the CLI path renders a CodedError's Context, so
+		// an operator who mistyped one of two spellings would otherwise be told
+		// which code failed but not which knob or what it read.
+		return 0, false, aerr.WithContext(aerr.APERTURE_CONFIG_INVALID,
+			fmt.Sprintf("cli: --enumerate-limit / %s is not a whole number: %q", envEnumerateLimit, raw),
+			map[string]any{
+				"setting": "--enumerate-limit / " + envEnumerateLimit,
+				"value":   raw,
+				"valid":   "a whole number, e.g. 1500",
+				"default": strconv.Itoa(engine.DefaultEnumerateLimit) + " — the setting may simply be omitted",
+			})
+	}
+	return n, true, nil
+}
+
+// serveEngineOptions turns the serve flags that configure the DECISION ENGINE
+// into the options buildDecisionStack layers on top of the shared wiring. It is
+// pure flag reading with no I/O, which is why runServe calls it before anything
+// is opened, and it is a function rather than inline code so a test can drive the
+// real flag set and assert against the engine the options actually produce.
+func serveEngineOptions(cmd *ucli.Command) ([]engine.Option, error) {
+	var opts []engine.Option
+	if cmd.Bool("enforce-membership") {
+		// Defence-in-depth, and serve-specific: a non-member of the active account
+		// is denied before any grant is read, which is what lets a single shared
+		// role (manager, analyst, ...) be reused across customer accounts without
+		// one customer's account-scoped grants leaking to another customer's
+		// members.
+		opts = append(opts, engine.WithMembershipEnforcement())
+	}
+	limit, ok, err := enumerateLimit(cmd)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		// Hand the configured number to the engine and let the engine decide what
+		// the number MEANS: it clamps every enumeration against it and stamps it
+		// into the scope deps, so the member gather and the result cap stay one
+		// value. An unset bound adds no option at all, which leaves that value at
+		// engine.DefaultEnumerateLimit rather than restating 1000 here.
+		opts = append(opts, engine.WithEnumerateLimit(limit))
+	}
+	return opts, nil
+}
+
 func runServe(ctx context.Context, cmd *ucli.Command) error {
 	// Resolve the deployment's entity-management posture FIRST, before anything is
 	// opened or created: a malformed APERTURE_MANAGE_* value must fail the boot
@@ -120,6 +222,14 @@ func runServe(ctx context.Context, cmd *ucli.Command) error {
 	// once, here — which entities Aperture owns is a property of the deployment,
 	// not of a request, so nothing downstream re-reads or mutates it.
 	managed, err := managedEntities(cmd)
+	if err != nil {
+		return err
+	}
+
+	// The engine's own configuration is read in the same breath and for the same
+	// reason: a malformed --enumerate-limit / APERTURE_ENUMERATE_LIMIT must fail
+	// the boot before a store is opened, not once requests are already answered.
+	engOpts, err := serveEngineOptions(cmd)
 	if err != nil {
 		return err
 	}
@@ -148,16 +258,8 @@ func runServe(ctx context.Context, cmd *ucli.Command) error {
 	// Build the shared decision stack — object providers, the rules engine over a
 	// storage-backed rule source, and scope resolution — through the SAME builder
 	// `check` / `enumerate` / `identifiers` / `explain` use, so no surface can
-	// answer a question differently from another (see decision.go).
-	var engOpts []engine.Option
-	if cmd.Bool("enforce-membership") {
-		// Defence-in-depth, and serve-specific: a non-member of the active account
-		// is denied before any grant is read, which is what lets a single shared
-		// role (manager, analyst, ...) be reused across customer accounts without
-		// one customer's account-scoped grants leaking to another customer's
-		// members.
-		engOpts = append(engOpts, engine.WithMembershipEnforcement())
-	}
+	// answer a question differently from another (see decision.go). The
+	// serve-specific engine options resolved above are layered on last.
 	stack, err := buildDecisionStack(store, cmd.String("seed"), engOpts...)
 	if err != nil {
 		return err

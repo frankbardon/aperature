@@ -39,6 +39,21 @@ Press `Ctrl-C` to trigger a graceful shutdown (`shutting down...`).
   a single shared role (manager, analyst, …) be reused across accounts without
   one account's grants leaking to another's members. Also settable via
   `APERTURE_ENFORCE_MEMBERSHIP`.
+- `--enumerate-limit` — the ceiling one `Enumerate` is bounded by: the number a
+  request with a non-positive `limit` receives, and the number a larger request
+  `limit` is clamped **down** to. It also bounds the scope member gather, so the
+  gather and the result cap are one value. Unset leaves the engine on its
+  documented default of `1000`. Also settable via `APERTURE_ENUMERATE_LIMIT`; the
+  flag wins when both are given.
+
+  ```bash
+  bin/aperture serve --enumerate-limit 1500
+  APERTURE_ENUMERATE_LIMIT=1500 bin/aperture serve
+  ```
+
+  A value that is not a whole number fails the boot with
+  `APERTURE_CONFIG_INVALID` naming the setting and the value it rejected —
+  before the store is opened — rather than quietly serving the default.
 
 Under `serve`, the facade is wired with everything the other surfaces expect: the
 admin gate, delegation and impersonation mutators, the append-only audit trail,
