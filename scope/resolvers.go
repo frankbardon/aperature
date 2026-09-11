@@ -90,7 +90,7 @@ func (r inclusiveResolver) Contains(ctx context.Context, object identity.Identit
 // wired rather than returning an empty set: an empty member list is an answer,
 // and a missing dependency must not be able to impersonate one.
 func (r inclusiveResolver) Members(ctx context.Context, pattern identity.Pattern) ([]identity.Identity, error) {
-	limit := boundLimit(0)
+	limit := r.deps.maxMembers()
 	out := make([]identity.Identity, 0, len(r.gc.Spec.IDs))
 	// seen deduplicates across the two halves: an id that is both listed and
 	// rule-selected is one member, not two. It is built only for the id-list —
@@ -211,6 +211,12 @@ func idInList(ids []string, object identity.Identity) bool {
 // through keep (used by exclusive to drop excluded objects, and by inclusive to
 // keep rule-selected ones). It requires an ObjectLister and surfaces
 // APERTURE_SCOPE_LISTER_UNCONFIGURED when none is wired.
+//
+// The gather is bounded by deps.maxMembers(), and that same number is the limit
+// handed to ObjectLister.List — the seam already carries one, so the configured
+// ceiling reaches the provider through the existing parameter rather than a new
+// one. Asking the lister for exactly what this gather can keep is what makes a
+// raised bound produce more objects instead of more discarded candidates.
 func enumerateOfType(
 	ctx context.Context,
 	deps Deps,
@@ -218,7 +224,7 @@ func enumerateOfType(
 	query identity.Pattern,
 	keep func(context.Context, identity.Identity) (bool, error),
 ) ([]identity.Identity, error) {
-	limit := boundLimit(0)
+	limit := deps.maxMembers()
 	candidates, err := deps.lister().List(ctx, gc.ObjectType, gc.Pattern, limit)
 	if err != nil {
 		return nil, err

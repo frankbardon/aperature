@@ -64,10 +64,11 @@ type ScopeResolver interface {
 ```
 
 `Contains` answers the `Check` hot-path question and never needs to list objects.
-`Members` performs a **bounded** enumeration (capped by `DefaultMaxMembers` =
-1000) for `Enumerate`-style callers. Resolver construction is cheap — small value
-structs, id-list membership by linear scan, no per-evaluation map allocation — and
-holds no cache.
+`Members` performs a **bounded** enumeration for `Enumerate`-style callers,
+capped by the `Deps.MaxMembers` the resolver was constructed with — the engine's
+configured enumeration bound, or `DefaultMaxMembers` (1000) when a wiring
+configures none. Resolver construction is cheap — small value structs, id-list
+membership by linear scan, no per-evaluation map allocation — and holds no cache.
 
 ### Two seam dependencies
 

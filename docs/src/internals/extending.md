@@ -80,7 +80,8 @@ type ScopeResolver interface {
 
 - `Contains` answers the hot-path question "is this concrete object a member?"
   and must never enumerate.
-- `Members` performs a bounded enumeration (bounded by `scope.DefaultMaxMembers`)
+- `Members` performs a bounded enumeration (bounded by the `Deps.MaxMembers` the
+  factory was handed, or `scope.DefaultMaxMembers` when that is zero)
   for `Enumerate`-style callers, and must agree with `Contains` — anything
   `Contains` accepts belongs in the member set, or the decision endpoints
   contradict each other. If it needs to list "all objects of a type" (including
