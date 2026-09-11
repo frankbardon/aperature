@@ -7,7 +7,7 @@ The decision commands are the read-only core of the CLI. They never change the
 model — they ask a question of it. All three of `check`, `enumerate`, and
 `explain` take the **subject principal as a positional argument** (the principal
 the question is *about*), not a `--principal` flag; see
-[Global options](global-options.md#the-acting-principal-principal) for why the
+[Global options](global-options.md#the-acting-principal---principal) for why the
 write commands differ. `identifiers` inspects an object type's source.
 
 All four build the same decision stack `aperture serve` does, so a question asked
@@ -109,12 +109,10 @@ aperture enumerate [options] <principal> <action> <pattern>
 
 `enumerate` turns the question around: instead of one object, it lists the
 object ids under a `<pattern>` that the principal may take `<action>` on, one id
-per line. `--limit` caps the result count **for this request**; the deployment's
-own ceiling is `--enumerate-limit` / `APERTURE_ENUMERATE_LIMIT` (default `1000`),
-which a larger `--limit` is clamped **down** to and which a `--limit` of zero or
-less asks for. That ceiling is the same one `aperture serve` honours — it
-configures the process, not the command — so the CLI and the server can never be
-bounded differently. Enumeration expands objects from the
+per line. `--limit` caps the result count **for this request**, within the
+deployment's own ceiling — see
+[`--limit` and the deployment's ceiling](#--limit-and-the-deployments-ceiling).
+Enumeration expands objects from the
 object sources the model declares — `providers:` (a file- or database-backed
 provider per type) and `objects:` (metadata declared inline) — so a model with
 neither (like the embedded example) yields an empty list. Run `enumerate` against
@@ -124,6 +122,62 @@ a seed that declares an object source for the type.
 bin/aperture enumerate alice read 'account:acme/project:atlas/document:*' \
   --seed ./model-with-providers.yaml --limit 100
 ```
+
+### `--limit` and the deployment's ceiling
+
+Two numbers bound one enumeration, and they are not the same kind of thing:
+
+| | Set by | Governs | Asks |
+|---|---|---|---|
+| **Request limit** | `--limit` | this one command | how many ids *you* want back |
+| **Deployment ceiling** | `--enumerate-limit` / `APERTURE_ENUMERATE_LIMIT`, default `1000` | the whole process | how many ids *anyone* may ask this deployment for |
+
+The ceiling always wins:
+
+- A `--limit` **above** the ceiling is clamped **down** to it.
+- A `--limit` at or below the ceiling is honoured as asked.
+- A `--limit` of **zero or less asks for the ceiling**. It does not mean
+  "unlimited", and there is no spelling that does — `enumerate` never
+  materialises an unbounded set.
+
+```bash
+# ask for 100 of the deployment's 1000
+bin/aperture enumerate alice read 'account:acme/project:atlas/document:*' \
+  --seed ./model.yaml --limit 100
+
+# ask for 5000 against the default ceiling: you get 1000, not 5000
+bin/aperture enumerate alice read 'account:acme/project:atlas/document:*' \
+  --seed ./model.yaml --limit 5000
+
+# raise the ceiling, then ask for all of it
+bin/aperture enumerate alice read 'account:acme/project:atlas/document:*' \
+  --seed ./model.yaml --enumerate-limit 2000 --limit 2000
+```
+
+The ceiling is the same number `aperture serve` honours — it configures the
+**process, not the command** — so the CLI and the server can never be bounded
+differently. `check`, `explain`, `identifiers` and `mcp` carry the same flag for
+that reason. See
+[The deployment's enumeration ceiling](global-options.md#the-deployments-enumeration-ceiling---enumerate-limit).
+
+**A full-looking result may be a truncated one.** Nothing in the output marks the
+difference: a list that stops at the ceiling looks exactly like a population that
+happened to end there. When a result comes back holding *exactly* its effective
+bound the engine logs a WARN naming that bound, so an unexpectedly round result
+is a reason to check the log and re-ask with a higher `--enumerate-limit`. The
+warning is a hint, not proof — a complete set of that size raises it too.
+
+**`--limit` is not the cheap knob.** It shortens only the second half of the
+work: the candidate set is gathered against the **ceiling** first, and `--limit`
+then caps what survives the access decision. `--limit 10` against a ceiling of
+`1000` still pays for ~1000 candidates. The number that moves the cost is
+`--enumerate-limit`, and [Performance](../operations/performance.md#the-enumeration-bound)
+carries the measured price of raising it.
+
+A value for `--enumerate-limit` that is not a whole number greater than zero —
+`banana`, `0`, `-5` — fails the command with `APERTURE_CONFIG_INVALID` naming the
+setting and the value it rejected, before any store is opened. To get the
+default, omit it.
 
 ### Narrowing by object metadata
 
@@ -276,4 +330,6 @@ Full flags: [`identifiers`](../reference/cli.md#aperture-identifiers).
 - [Global options](global-options.md) — `--seed` / `--store` / `--account`, and why the principal is positional here.
 - [First decision (CLI)](../getting-started/first-decision-cli.md) — the same commands walked through against the example model.
 - [Mutations](mutations.md) — change the grants these decisions read.
+- [Performance & the NFR](../operations/performance.md#the-enumeration-bound) —
+  what the deployment's enumeration ceiling costs, measured.
 - [Command-Line Reference](../reference/cli.md) — the generated flag tables.

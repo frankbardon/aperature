@@ -130,7 +130,7 @@ type EnumerateRequest struct {
 	Pattern    string          // identity pattern bounding the search
 	Fields     map[string]any  // optional object-metadata predicates; nil/empty filters nothing
 	References []ReferenceEdge // optional reference edges; nil/empty restricts nothing
-	Limit      int             // caps the number of returned ids; <= 0 means the default bound
+	Limit      int             // caps the number of returned ids; <= 0 means the configured bound
 }
 ```
 

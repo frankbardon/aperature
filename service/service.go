@@ -339,7 +339,9 @@ type EnumerateQuery struct {
 	// reflected schema marks the edges REQUIRED and an agent could not ask an
 	// unrestricted question at all.
 	References []ReferenceEdge `json:"References,omitempty" jsonschema:"Optional reference edges restricting the result to the identities a holder object's declared reference field contains, e.g. the brands in dataset X. Several edges are ANDed and they compose with Fields. A holder the principal may not see yields an empty result, not an error. Omit to restrict nothing."`
-	// Limit caps the number of returned object ids; <= 0 means the default.
+	// Limit caps the number of returned object ids. <= 0 means the engine's
+	// configured bound; a Limit above it is clamped down to it. That bound is
+	// engine.DefaultEnumerateLimit only when nothing configured one.
 	Limit int
 }
 
