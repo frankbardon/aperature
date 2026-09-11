@@ -12,15 +12,21 @@ import (
 )
 
 // DefaultEnumerateLimit bounds Enumerate's result when the caller imposes no
-// positive limit, so an enumeration can never materialise an unbounded set even
-// if a provider lister would. It matches the scope/provider enumeration bound.
+// positive limit and the engine was built with no configured bound, so an
+// enumeration can never materialise an unbounded set even if a provider lister
+// would. It matches the scope/provider enumeration bound.
+//
+// It is the DEFAULT, not the ceiling: WithEnumerateLimit replaces it, and the
+// engine clamps against the value it was configured with.
 const DefaultEnumerateLimit = 1000
 
 // EnumerateRequest is the input to Enumerate: the principal asking, the action,
 // and the object PATTERN that bounds the search, scoped to an account. Pattern
 // is an identity pattern (e.g. "account:acme/**" or "account:acme/document:*")
 // that both bounds the candidate set and is intersected with each grant's own
-// scope. Limit caps the number of returned ids; <= 0 means DefaultEnumerateLimit.
+// scope. Limit caps the number of returned ids; <= 0 means the engine's
+// configured bound (WithEnumerateLimit, default DefaultEnumerateLimit), and a
+// larger Limit is clamped down to it.
 type EnumerateRequest struct {
 	// Account is the active account the enumeration is scoped to. Mandatory.
 	Account string
@@ -67,7 +73,8 @@ type EnumerateRequest struct {
 	// request's account, and a dangling referenced identity is skipped rather than
 	// failing the decision.
 	References []ReferenceEdge
-	// Limit caps the number of returned object ids. <= 0 means the default bound.
+	// Limit caps the number of returned object ids. <= 0 means the engine's
+	// configured bound; a Limit above it is clamped down to it.
 	Limit int
 }
 
@@ -126,8 +133,14 @@ func WithMetadata(f MetadataFetcher) Option {
 //
 // Enumerate is the most cache-sensitive op, so it is deliberately bounded: each
 // resolver's Members is itself limited, and the overall result is capped by
-// Limit (default DefaultEnumerateLimit). Object order is deterministic (sorted
-// by canonical id). An operational failure (storage, an unresolvable strategy,
+// Limit, itself bounded by the engine's configured enumeration bound
+// (WithEnumerateLimit, default DefaultEnumerateLimit). Object order is
+// deterministic (sorted by canonical id). A result that comes back holding
+// exactly its effective bound is WARNED about through the engine's logger
+// (WithLogger) — a hint that it may have been truncated, never a claim that it
+// was, since a complete set of exactly that size looks identical. The return
+// shape says nothing either way.
+// An operational failure (storage, an unresolvable strategy,
 // or an unconfigured lister an implicit/exclusive grant needs) is returned as an
 // APERTURE_* coded error and the caller treats it as a non-result.
 func (e *Engine) Enumerate(ctx context.Context, req EnumerateRequest) ([]string, error) {
@@ -188,7 +201,7 @@ func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest
 			"engine: failed to load grants for subjects", err)
 	}
 
-	limit := boundEnumerateLimit(req.Limit)
+	limit := e.boundEnumerateLimit(req.Limit)
 	permCache := make(map[string]*model.Permission, len(grants))
 
 	// The decision context reused per candidate. Object is filled per candidate.
@@ -275,7 +288,44 @@ func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest
 			break
 		}
 	}
+	e.warnAtEnumerateBound(ctx, req, limit, len(out))
 	return out, nil
+}
+
+// warnAtEnumerateBound reports, through the engine's logger, that an enumeration
+// came back holding exactly as many ids as it was allowed to hold.
+//
+// It is a HINT, not an assertion. A set of exactly `limit` objects may well be
+// the complete answer that happens to be that size, and nothing here can tell
+// the two apart: Enumerate returns ([]string, error) and grows no third result
+// to say which it was. What the warning does is make the only case where
+// truncation CAN have happened visible to an operator, who can re-ask with a
+// higher bound and compare. A caller still cannot distinguish the two — that is
+// the accepted cost of not breaking the return shape.
+//
+// Both numbers are reported because they answer different questions. `bound` is
+// the cap THIS enumeration ran under, which is the caller's own Limit when that
+// was the smaller of the two; `configured_bound` is the engine's ceiling
+// (WithEnumerateLimit). "Hit my own limit of 10" is a routine paging story;
+// "hit the deployment's ceiling of 1000" is an operational one.
+//
+// The engine is the only place this is raised. One bound flows all the way down
+// — the engine's clamp, the scope member gather and the provider list are one
+// number — so a starve underneath surfaces here as a result sitting exactly on
+// the bound, and scope/provider need no logger of their own.
+func (e *Engine) warnAtEnumerateBound(ctx context.Context, req EnumerateRequest, limit, got int) {
+	if got < limit {
+		return
+	}
+	e.log().WarnContext(ctx,
+		"engine: enumeration returned exactly its bound; the result may be truncated",
+		"bound", limit,
+		"configured_bound", e.enumerateBound(),
+		"requested_limit", req.Limit,
+		"account", req.Account,
+		"action", req.Action,
+		"pattern", req.Pattern,
+	)
 }
 
 // matchesFields reports whether obj's metadata satisfies every predicate in
@@ -316,10 +366,14 @@ func (e *Engine) matchesFields(ctx context.Context, obj identity.Identity, field
 	return provider.MatchFields(md, fields), nil
 }
 
-// boundEnumerateLimit normalises a caller limit to a positive bound.
-func boundEnumerateLimit(limit int) int {
-	if limit <= 0 || limit > DefaultEnumerateLimit {
-		return DefaultEnumerateLimit
+// boundEnumerateLimit normalises a caller limit against the bound this engine was
+// CONFIGURED with (WithEnumerateLimit), not against the package constant: a
+// non-positive request limit yields the configured bound, and a larger one is
+// clamped down to it.
+func (e *Engine) boundEnumerateLimit(limit int) int {
+	bound := e.enumerateBound()
+	if limit <= 0 || limit > bound {
+		return bound
 	}
 	return limit
 }

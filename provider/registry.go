@@ -10,9 +10,15 @@ import (
 	"github.com/frankbardon/aperture/identity"
 )
 
-// DefaultListLimit bounds an enumeration (List/Query through the scope-lister
-// adapter) when the caller imposes no positive limit, so a resolver can never
-// materialise an unbounded object set off a provider.
+// DefaultListLimit is the bound an enumeration (List/Query through the
+// scope-lister adapter) falls back to when the caller imposes no positive limit.
+// It is a DEFAULT, not a ceiling: a positive caller limit is honoured verbatim,
+// however large.
+//
+// The caller is the authority here because the bound on a decision path is set
+// above this package — the engine's configured enumerate limit, which every
+// network surface sits behind. A direct Go embedder that asks this package for a
+// million objects is asking deliberately, and receives a million.
 const DefaultListLimit = 1000
 
 // typeEntry binds one object-type's provider to its per-type cache and the
@@ -179,7 +185,8 @@ func (r *Registry) Fetch(ctx context.Context, id identity.Identity) (Metadata, e
 // objectType that match pattern, by querying the type's provider and bounding
 // the result by both the pattern and the limit. It opportunistically warms the
 // per-type cache with each returned object's metadata, since the provider call
-// already paid to produce it. limit <= 0 means DefaultListLimit.
+// already paid to produce it. A positive limit is honoured as given — it is not
+// clamped down — and limit <= 0 means DefaultListLimit.
 //
 // The signature is byte-for-byte scope.ObjectLister, so a *Registry is wired
 // directly as engine.ScopeDeps{Lister: reg}.
@@ -211,7 +218,8 @@ func (r *Registry) List(ctx context.Context, objectType string, pattern identity
 
 // Identifiers returns every object identity of objectType by calling the type's
 // provider unfiltered List — the COMPLETE, UNBOUNDED enumeration. It differs from
-// List, which is the scope-lister seam and clamps to DefaultListLimit: use
+// List, the scope-lister seam, which returns at most the limit its caller asked
+// for (DefaultListLimit when the caller asks for none): use
 // Identifiers when you need the whole set (e.g. to expand an exclusive allowance
 // into a positive allow-list) and can afford to materialise it, and List when a
 // bounded, pattern-scoped page is enough. An unregistered type yields
@@ -318,9 +326,16 @@ func (r *Registry) Stats(objectType string) (Stats, bool) {
 	return e.cache.Stats(), true
 }
 
-// boundLimit normalises a caller limit to a positive bound.
+// boundLimit normalises a caller limit to a positive bound: a positive limit is
+// honoured verbatim, and <= 0 means DefaultListLimit.
+//
+// It deliberately does not clamp DOWN. A limit above DefaultListLimit used to be
+// truncated back to it here, which made this package the floor of every
+// enumeration in the process and left a configured, higher bound unreachable.
+// The ceiling now lives one layer up, on the engine's configured enumerate
+// limit, which every network surface sits behind.
 func boundLimit(limit int) int {
-	if limit <= 0 || limit > DefaultListLimit {
+	if limit <= 0 {
 		return DefaultListLimit
 	}
 	return limit

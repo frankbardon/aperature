@@ -2,12 +2,12 @@
 
 **Audience:** operators and integrators driving Aperture from a shell.
 
-`aperture` declares **no persistent global flags**. The four options that recur
-across the command tree — `--seed`, `--store`, `--account`, and `--principal` —
-are defined *per command*, so they appear in each command's flag table in the
-[Command-Line Reference](../reference/cli.md). They carry the same meaning
-wherever they appear; this page is the single explanation the family pages link
-back to.
+`aperture` declares **no persistent global flags**. The five options that recur
+across the command tree — `--seed`, `--store`, `--account`, `--principal`, and
+`--enumerate-limit` — are defined *per command*, so they appear in each
+command's flag table in the [Command-Line Reference](../reference/cli.md). They
+carry the same meaning wherever they appear; this page is the single explanation
+the family pages link back to.
 
 ## Selecting a model: `--seed` and `--store`
 
@@ -78,6 +78,32 @@ A mutation with no `--principal` (and no `APERTURE_PRINCIPAL`) fails with
 purpose-specific flag instead — `bestow`/`revoke` use `--delegator`, and
 `impersonate` uses `--operator` — but each of those still reads from
 `APERTURE_PRINCIPAL` as its default source.
+
+## The deployment's enumeration ceiling: `--enumerate-limit`
+
+`--enumerate-limit` (env `APERTURE_ENUMERATE_LIMIT`, default `1000`) is the
+maximum number of object ids one enumeration may return, and the ceiling a
+larger request limit is clamped **down** to. It also bounds the scope member
+gather, so one number governs both halves of an enumeration.
+
+It configures the **process**, not the command. Every command that decides
+carries it — `check`, `enumerate`, `identifiers`, `explain`, `serve`, `mcp` —
+and all of them resolve it identically, so one binary can never answer `1500`
+over HTTP and `1000` at the shell. Set it once in the environment:
+
+```bash
+export APERTURE_ENUMERATE_LIMIT=1500
+bin/aperture enumerate alice list 'account:acme/**' --seed ./my-model.yaml
+bin/aperture serve --seed ./my-model.yaml
+```
+
+The flag wins over the variable when both are given. A value that is not a whole
+number **greater than zero** — `banana`, `0`, `-5` — fails the command with
+`APERTURE_CONFIG_INVALID` naming the setting and the value it rejected, rather
+than silently falling back to `1000`. To get the default, omit the setting.
+
+On `enumerate` this is distinct from `--limit`, which caps a **single request**
+and is itself clamped by this ceiling. See [Decisions](decisions.md).
 
 ## Related
 

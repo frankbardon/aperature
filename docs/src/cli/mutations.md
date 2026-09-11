@@ -12,7 +12,7 @@ surface gates it. There is no CLI-only write path.
 Every write command needs an **acting principal**: the authenticated caller
 performing the change, taken from `--principal` (or `APERTURE_PRINCIPAL`) — not a
 positional argument. The reads (`get`, `list`) need no actor. See
-[Global options](global-options.md#the-acting-principal-principal) for the
+[Global options](global-options.md#the-acting-principal---principal) for the
 subject-vs-actor distinction, and set it once per shell:
 
 ```bash

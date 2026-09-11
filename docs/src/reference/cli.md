@@ -256,6 +256,7 @@ aperture check [options] <principal> <action> <object>
 | Name | Aliases | Type | Default | Usage |
 | --- | --- | --- | --- | --- |
 | `--account` | — | string | `"acme"` | active account the decision is scoped to |
+| `--enumerate-limit` | — | string | — | maximum number of object ids one enumeration returns, and the ceiling a larger request limit is clamped down to. It configures the PROCESS, not the command: serve and every one-shot decision command honour the same value (a whole number greater than zero; default 1000; overrides APERTURE_ENUMERATE_LIMIT) (env: `APERTURE_ENUMERATE_LIMIT`) |
 | `--seed` | — | string | — | path to a JSON/YAML seed model (defaults to the embedded example) |
 | `--store` | — | string | — | DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path |
 
@@ -309,6 +310,11 @@ A holder you may not read yields an EMPTY list and no error, which is deliberate
 "you may not see dataset X" and "dataset X lists nothing you may see" must not be
 tellable apart. Restriction, like filtering, happens before --limit.
 
+--limit and --enumerate-limit are two different bounds. --limit is THIS REQUEST's
+cap; --enumerate-limit is the DEPLOYMENT's ceiling, the same value `aperture serve`
+honours, and it is what a --limit larger than it is clamped down to. A --limit of
+zero or less asks for the ceiling.
+
 ```
 aperture enumerate [options] <principal> <action> <pattern>
 ```
@@ -316,9 +322,10 @@ aperture enumerate [options] <principal> <action> <pattern>
 | Name | Aliases | Type | Default | Usage |
 | --- | --- | --- | --- | --- |
 | `--account` | — | string | `"acme"` | active account the enumeration is scoped to |
+| `--enumerate-limit` | — | string | — | maximum number of object ids one enumeration returns, and the ceiling a larger request limit is clamped down to. It configures the PROCESS, not the command: serve and every one-shot decision command honour the same value (a whole number greater than zero; default 1000; overrides APERTURE_ENUMERATE_LIMIT) (env: `APERTURE_ENUMERATE_LIMIT`) |
 | `--field` | — | string | — | object-metadata predicate as key=value, repeatable; the value is ALWAYS a string, so --field seats=5 matches the string "5" and never the number 5 (use --fields-json for that). Overrides --fields-json on a key collision |
 | `--fields-json` | — | string | — | object-metadata predicates as a JSON object, for values that are genuinely a number, bool, or list (e.g. '{"seats":5,"active":true,"tags":["a"]}'). Merged first; --field entries then override by key |
-| `--limit` | — | int | `0` | cap the number of returned object ids (&lt;=0 means the default) |
+| `--limit` | — | int | `0` | cap the number of returned object ids for THIS request, clamped down to the deployment's --enumerate-limit ceiling (&lt;=0 means that ceiling, which is 1000 unless configured) |
 | `--seed` | — | string | — | path to a JSON/YAML seed model (defaults to the embedded example) |
 | `--store` | — | string | — | DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path |
 | `--via` | — | string | — | restrict the result to the objects a holder's declared reference field names, as &lt;holder-identity&gt;.&lt;field&gt; (e.g. --via account:acme/dataset:x.current_brands); repeatable, and several edges are ANDed. The FIELD is everything after the LAST '.' |
@@ -334,6 +341,7 @@ aperture explain [options] <principal> <action> <object>
 | Name | Aliases | Type | Default | Usage |
 | --- | --- | --- | --- | --- |
 | `--account` | — | string | `"acme"` | active account the decision is scoped to |
+| `--enumerate-limit` | — | string | — | maximum number of object ids one enumeration returns, and the ceiling a larger request limit is clamped down to. It configures the PROCESS, not the command: serve and every one-shot decision command honour the same value (a whole number greater than zero; default 1000; overrides APERTURE_ENUMERATE_LIMIT) (env: `APERTURE_ENUMERATE_LIMIT`) |
 | `--seed` | — | string | — | path to a JSON/YAML seed model (defaults to the embedded example) |
 | `--store` | — | string | — | DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path |
 
@@ -377,6 +385,7 @@ aperture identifiers [options] <object_type>
 
 | Name | Aliases | Type | Default | Usage |
 | --- | --- | --- | --- | --- |
+| `--enumerate-limit` | — | string | — | maximum number of object ids one enumeration returns, and the ceiling a larger request limit is clamped down to. It configures the PROCESS, not the command: serve and every one-shot decision command honour the same value (a whole number greater than zero; default 1000; overrides APERTURE_ENUMERATE_LIMIT) (env: `APERTURE_ENUMERATE_LIMIT`) |
 | `--exclude` | — | string | — | id to omit from the result (repeatable); expands an exclusive allowance |
 | `--seed` | — | string | — | path to a JSON/YAML seed model (defaults to the embedded example) |
 | `--store` | — | string | — | DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path |
@@ -440,6 +449,7 @@ aperture mcp [options]
 
 | Name | Aliases | Type | Default | Usage |
 | --- | --- | --- | --- | --- |
+| `--enumerate-limit` | — | string | — | maximum number of object ids one enumeration returns, and the ceiling a larger request limit is clamped down to. It configures the PROCESS, not the command: serve and every one-shot decision command honour the same value (a whole number greater than zero; default 1000; overrides APERTURE_ENUMERATE_LIMIT) (env: `APERTURE_ENUMERATE_LIMIT`) |
 | `--seed` | — | string | — | path to a JSON/YAML seed model (defaults to the embedded example) |
 | `--store` | — | string | — | DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path |
 
@@ -488,6 +498,7 @@ aperture serve [options]
 | `--addr` | — | string | `":8080"` | TCP address to listen on |
 | `--auth` | — | string | — | authenticator adapter: dev\|oidc\|parsec (overrides APERTURE_AUTH_MODE; defaults to dev — bearer is the principal id, no external IdP) (env: `APERTURE_AUTH_MODE`) |
 | `--enforce-membership` | — | bool | — | deny any decision whose principal is not a member of the active account, before grants are consulted (defence-in-depth; lets shared roles be reused across accounts safely) (env: `APERTURE_ENFORCE_MEMBERSHIP`) |
+| `--enumerate-limit` | — | string | — | maximum number of object ids one enumeration returns, and the ceiling a larger request limit is clamped down to. It configures the PROCESS, not the command: serve and every one-shot decision command honour the same value (a whole number greater than zero; default 1000; overrides APERTURE_ENUMERATE_LIMIT) (env: `APERTURE_ENUMERATE_LIMIT`) |
 | `--manage-accounts` | — | bool | — | manage the lifecycle of account records — allow account create/update/delete through the API (default true; overrides APERTURE_MANAGE_ACCOUNTS). Pass --manage-accounts=false when accounts are mastered by an upstream system: Aperture then refuses every account write regardless of the caller's authority, while account reads and every decision stay unaffected. Read once at startup; a restart is required to change it |
 | `--manage-memberships` | — | bool | — | manage the lifecycle of principal-to-account memberships — allow membership create/update/delete through the API (default true; overrides APERTURE_MANAGE_MEMBERSHIPS). Independent of the other two, so a deployment can master accounts and principals upstream and still decide who belongs to what, or the reverse. Read once at startup; a restart is required to change it |
 | `--manage-principals` | — | bool | — | manage the lifecycle of principal records — allow principal create/update/delete through the API (default true; overrides APERTURE_MANAGE_PRINCIPALS). Pass --manage-principals=false when principals are mastered by an upstream directory or IdP: Aperture then refuses every principal write regardless of the caller's authority, while principal reads and every decision stay unaffected. Read once at startup; a restart is required to change it |

@@ -267,7 +267,7 @@ func TestMCPSurfaceFiltersByMetadata(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	var warnings bytes.Buffer
-	svc, stack, err := mcpService(store, seedPath, &warnings)
+	svc, stack, err := mcpService(unconfigured(), store, seedPath, &warnings)
 	if err != nil {
 		t.Fatalf("mcpService: %v", err)
 	}

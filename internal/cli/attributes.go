@@ -57,7 +57,7 @@ func attributeStack(ctx context.Context, cmd *ucli.Command) (decisionStack, func
 	if err != nil {
 		return decisionStack{}, nil, err
 	}
-	stack, err := buildDecisionStack(store, cmd.String("seed"))
+	stack, err := buildDecisionStack(cmd, store, cmd.String("seed"))
 	if err != nil {
 		_ = store.Close()
 		return decisionStack{}, nil, err

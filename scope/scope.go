@@ -64,8 +64,10 @@ const (
 	StrategyExclusive = "exclusive"
 )
 
-// DefaultMaxMembers bounds Members enumeration when a caller does not impose its
-// own limit, so a resolver can never materialise an unbounded object set.
+// DefaultMaxMembers is the member-enumeration ceiling a wiring gets when it
+// configures none — see Deps.MaxMembers. The ceiling is configuration, not a
+// constant: a resolver materialises at most the bound it was given, and this is
+// the bound it is given by default.
 const DefaultMaxMembers = 1000
 
 // ScopeResolver decides a grant's object membership for one strategy. It is
@@ -82,7 +84,8 @@ type ScopeResolver interface {
 	// Contains reports whether object is a member of the grant's object set.
 	Contains(ctx context.Context, object identity.Identity) (bool, error)
 	// Members returns the member identities that also match pattern, bounded by
-	// DefaultMaxMembers. It may require an ObjectLister; when none is configured
+	// the Deps.MaxMembers the resolver was constructed with (DefaultMaxMembers
+	// when that is zero). It may require an ObjectLister; when none is configured
 	// it returns APERTURE_SCOPE_LISTER_UNCONFIGURED.
 	Members(ctx context.Context, pattern identity.Pattern) ([]identity.Identity, error)
 }
@@ -270,6 +273,14 @@ func (noRules) Selected(context.Context, string, identity.Identity, string, stri
 type Deps struct {
 	Lister ObjectLister
 	Rules  RuleEvaluator
+	// MaxMembers is the enumeration ceiling this wiring gathers members against.
+	// Zero — the zero value, and what a caller who does not care leaves it as —
+	// means DefaultMaxMembers.
+	//
+	// It is not normally set by hand: engine.WithScopeResolution stamps the
+	// engine's configured enumeration bound into it, so the member gather and the
+	// result cap are one number rather than two that can disagree.
+	MaxMembers int
 }
 
 func (d Deps) lister() ObjectLister {
@@ -284,6 +295,14 @@ func (d Deps) rules() RuleEvaluator {
 		return d.Rules
 	}
 	return noRules{}
+}
+
+// maxMembers is the positive member-enumeration ceiling this wiring gathers
+// against — MaxMembers when it is positive, DefaultMaxMembers otherwise. Every
+// Members path reads the bound through here rather than from the constant, so
+// the ceiling a caller configured is the ceiling the gather actually uses.
+func (d Deps) maxMembers() int {
+	return boundLimit(d.MaxMembers)
 }
 
 // Factory constructs a ScopeResolver for one grant evaluation. It validates the
@@ -380,12 +399,16 @@ func (r *Registry) Resolve(gc GrantContext, deps Deps) (ScopeResolver, error) {
 	return f(gc, deps)
 }
 
-// boundLimit normalises a caller limit to a positive bound.
-func boundLimit(limit int) int {
-	if limit <= 0 || limit > DefaultMaxMembers {
+// boundLimit normalises a configured member ceiling to a positive bound. Zero —
+// the zero value of Deps.MaxMembers, and what a wiring that does not care leaves
+// it as — means DefaultMaxMembers. A positive ceiling is honoured as given: it
+// IS the bound, so clamping it back down to the package constant would starve
+// every layer above it and make a raised engine bound unreachable.
+func boundLimit(ceiling int) int {
+	if ceiling <= 0 {
 		return DefaultMaxMembers
 	}
-	return limit
+	return ceiling
 }
 
 // terminalOfType reports whether object's terminal segment is of objectType —

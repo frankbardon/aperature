@@ -259,16 +259,16 @@ func TestEnumerateFields_FilterAppliedBeforeLimit(t *testing.T) {
 
 // Limit <= 0 still means DefaultEnumerateLimit, filtered or not.
 func TestEnumerateFields_DefaultLimitUnchanged(t *testing.T) {
+	f := allowAllFixture(t, brandCatalogue())
 	for _, limit := range []int{0, -1, DefaultEnumerateLimit + 1} {
-		if got := boundEnumerateLimit(limit); got != DefaultEnumerateLimit {
+		if got := f.eng.boundEnumerateLimit(limit); got != DefaultEnumerateLimit {
 			t.Fatalf("boundEnumerateLimit(%d) = %d, want %d", limit, got, DefaultEnumerateLimit)
 		}
 	}
-	if got := boundEnumerateLimit(7); got != 7 {
+	if got := f.eng.boundEnumerateLimit(7); got != 7 {
 		t.Fatalf("boundEnumerateLimit(7) = %d, want 7", got)
 	}
 
-	f := allowAllFixture(t, brandCatalogue())
 	got := f.enumerate(map[string]any{"seats": int64(5)}, 0)
 	want := []string{
 		"account:acme/document:1", "account:acme/document:2", "account:acme/document:4",

@@ -39,6 +39,39 @@ Press `Ctrl-C` to trigger a graceful shutdown (`shutting down...`).
   a single shared role (manager, analyst, …) be reused across accounts without
   one account's grants leaking to another's members. Also settable via
   `APERTURE_ENFORCE_MEMBERSHIP`.
+- `--enumerate-limit` — the ceiling one `Enumerate` is bounded by: the number a
+  request with a non-positive `limit` receives, and the number a larger request
+  `limit` is clamped **down** to. It also bounds the scope member gather, so the
+  gather and the result cap are one value. Unset leaves the engine on its
+  documented default of `1000`. Also settable via `APERTURE_ENUMERATE_LIMIT`; the
+  flag wins when both are given.
+
+  ```bash
+  bin/aperture serve --enumerate-limit 1500
+  APERTURE_ENUMERATE_LIMIT=1500 bin/aperture serve
+  ```
+
+  **It is not a `serve` flag.** It describes the deployment, not the server, so
+  the same flag and the same variable are carried by `check`, `enumerate`,
+  `identifiers`, `explain` and `mcp`, and all of them resolve it identically —
+  one binary cannot be configured to answer 1500 over HTTP and 1000 on the
+  command line. The wiring lives in the decision stack every command builds, not
+  in `serve`'s own options (which hold only `--enforce-membership`, a posture
+  that really is the server's alone).
+
+  ```bash
+  APERTURE_ENUMERATE_LIMIT=1500 bin/aperture enumerate alice list 'account:acme/**'
+  ```
+
+  A value that is not a whole number **greater than zero** fails the command with
+  `APERTURE_CONFIG_INVALID` naming the setting and the value it rejected — under
+  `serve`, before the store is opened — rather than quietly serving the default.
+  That covers `banana`, and it covers `0` and `-5` too: the engine's
+  `WithEnumerateLimit` normalises a non-positive bound to the default, which is
+  the right answer for a Go embedder passing a computed number and the wrong one
+  for a human who typed one. An operator who wrote `-5` would be served `1000`
+  while believing otherwise, so the CLI refuses at the boundary what the library
+  would have absorbed. To get the default, omit the setting.
 
 Under `serve`, the facade is wired with everything the other surfaces expect: the
 admin gate, delegation and impersonation mutators, the append-only audit trail,

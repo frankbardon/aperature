@@ -136,7 +136,8 @@ real tag list does not guarantee.
 | `BenchmarkRuleEval/<variant>` | the rule **in isolation** — compiled once, evaluated over the same metadata, so the fixture's ~60 µs of grant resolution cannot mask it |
 | `BenchmarkCollectionScaling/tags-N` | the guarded collection operator swept across array sizes, with the field's `ValueBytes` reported alongside |
 | `BenchmarkRuleCompileCached/<variant>` | the AST work a `Check` pays on **every** decision even when the compiled program is cached, with the AST's node count alongside |
-| `BenchmarkEnumerateRuleBacked/candidates-N` | a **rule-backed** `Enumerate` swept across candidate-set sizes, reporting a derived `ns/candidate` and the returned `ids` count |
+| `BenchmarkEnumerateRuleBacked/candidates-N` | a **rule-backed** `Enumerate` swept across candidate-set sizes at the engine's default bound, reporting a derived `ns/candidate` and the returned `ids` count |
+| `BenchmarkEnumerateRuleBacked/candidates-N/bound-M` | the same sweep at a bound **raised** through `engine.WithEnumerateLimit`, so "what does raising the bound cost?" is answered from one run |
 | `BenchmarkEnumerateRuleBackedRuleEval` | the same number of `rules.Engine.Selected` calls with no engine around them, so the rule half of the enumeration cost is separable from the decision half |
 | `BenchmarkDateOpEval/<op>` | each of the **eight** date operators in isolation, so the post-parse cost of an ordering operator and a calendar-bucket one come apart |
 | `BenchmarkRelativeDateComplexity/<stage>` | the relative-date cost **ladder** — no `$rel`, anchor, offset, snap, snap + offset, snap + clamping offset, two relative bounds — where adjacent rows differ by exactly one stage |
@@ -179,6 +180,11 @@ unanchored regexp — picks it up with no command change. It measures over 20 00
 samples rather than 100 000/200 000 because the gate multiplies out over every
 variant × the audit axis (26 combinations today, ~105 s end to end); the
 thresholds are *rates*, so the smaller sample does not weaken them.
+
+`TestCheckNFREnumerateBound` is the third case that invocation picks up, and the
+one threshold in the suite that is **not** a wall clock: it holds a rule-backed
+`Enumerate` at a **raised** bound to a *ratio* against the same enumeration at the
+default bound. See [the raised-bound gate](#the-raised-bound-gate-testchecknfrenumeratebound).
 
 ### The allocation guard (E5-S2)
 
@@ -445,41 +451,160 @@ decision over every survivor, which consults the same grant again. One
 cached-`Check` baseline above is untouched) with one account-wide
 `inclusive;rule=…` grant over N documents, all of which the rule selects — the
 worst case, since a rejected candidate skips the second evaluation.
-`BenchmarkEnumerateRuleBacked`, Apple M1 Max, `-benchtime=2s`, audit off:
 
-| candidates | ns/op | ns/candidate | allocs/op | B/op | ids returned |
-|---:|---:|---:|---:|---:|---:|
-| 10 | 40 472 | 4 047 | 532 | 37 223 | 10 |
-| 100 | 391 125 | 3 911 | 5 075 | 367 144 | 100 |
-| 1 000 | 4 195 286 | 4 195 | 50 118 | 3 690 931 | 1 000 |
-| 2 000 | 4 434 250 | 4 434 | 50 123 | 3 725 176 | 1 000 |
+The sweep has two halves, run in the **same** invocation so the before/after
+comparison never spans two machines: rows with no bound run on the engine's
+default, and rows with one configure it through `engine.WithEnumerateLimit` —
+the option, never a constant read back out, so the number really travels engine
+clamp → scope member gather → provider list.
+
+`BenchmarkEnumerateRuleBacked`, Apple M1 Max (10 cores), go1.26.5 darwin/arm64,
+`-benchtime=2s -count=3`, medians of 3, audit off:
+
+| candidates | bound | ns/op | ns/candidate | allocs/op | B/op | ids returned |
+|---:|---:|---:|---:|---:|---:|---:|
+| 10 | — | 54 724 | 5 472 | 596 | 45 060 | 10 |
+| 100 | — | 567 891 | 5 679 | 5 679 | 442 772 | 100 |
+| 1 000 | — | 6 317 880 | 6 318 | 56 133 | 4 444 912 | 1 000 |
+| 2 000 | — | 5 929 466 | 5 929 | 56 136 | 4 478 722 | 1 000 |
+| 1 000 | 2 000 | 5 743 803 | 5 744 | 56 127 | 4 444 822 | 1 000 |
+| 2 000 | 2 000 | 11 638 062 | 5 819 | 112 176 | 8 964 388 | 2 000 |
+| 4 000 | 2 000 | 12 005 617 | 6 003 | 112 162 | 9 025 695 | 2 000 |
 
 And the rule half in isolation (`BenchmarkEnumerateRuleBackedRuleEval`, 1 000
-`Selected` calls): **1 235 ns/eval, 14 allocs/eval, ~945 B/eval**.
+`Selected` calls), same run: **2 348 ns/eval, 17 allocs/eval, ~1 297 B/eval**.
 
-- **~4.2 µs and ~50 allocations per candidate**, flat across three orders of
-  magnitude — linear in the candidate count, with no super-linear term in the
-  resolver.
-- **The rule is ~60% of it.** Two evaluations at 1 235 ns is ~2.5 µs of the
-  ~4.2 µs and 28 of the ~50 allocations; the rest is the decision engine's own
-  per-candidate work. Inside the rule half the largest line item is the
+The whole table — the untouched `RuleEval` row included — sits roughly 40% above
+the figures first committed here (4 195 ns/candidate, 1 235 ns/eval). Every row
+moved together, so read the **internal ratios**; the absolute numbers are one
+machine on one day.
+
+- **~5.7–6.3 µs and ~56 allocations per returned id**, flat across three orders
+  of magnitude *and* across both bounds — linear in the result size, with no
+  super-linear term in the resolver at the raised bound either.
+- **Doubling the bound doubles the cost, and no more than doubles it.** 1 000
+  ids → 2 000 ids is 6.32 ms → 11.64 ms (1.84×), 56 133 → 112 176 allocations
+  (2.00×), 4.44 MB → 8.96 MB (2.02×). Budget a raise as proportional: roughly
+  **4.5 KB and 56 allocations of transient garbage per id the bound allows**, so
+  a bound of 10 000 is a ~45 MB, ~58 ms enumeration.
+- **Raising the bound is free until the population reaches it.** The
+  1 000-candidate row at bound 2 000 costs what it costs unconfigured — 5.74 ms
+  vs 6.32 ms, 56 127 vs 56 133 allocations, the same `B/op` to four digits.
+  Headroom a deployment does not use is not paid for.
+- **The raised bound clamps exactly as the default one does.** 4 000 candidates
+  at bound 2 000 costs what 2 000 at bound 2 000 costs (12.01 vs 11.64 ms,
+  112 162 vs 112 176 allocations), and 2 000 candidates unconfigured costs what
+  1 000 do. Past the bound the extra objects are never visited, so the worst case
+  stays a constant a host can budget for — it is just a constant the operator now
+  chooses. `TestEnumerateRuleBackedStaysBounded` pins that ungated, at the
+  default bound and at a raised one.
+- **The rule is ~55–60% of it.** Two evaluations at 2 348 ns is ~4.7 µs of the
+  ~5.8–6.3 µs and 34 of the ~56 allocations; the rest is the decision engine's
+  own per-candidate work. Inside the rule half the largest line item is the
   per-decision AST re-walk (`BenchmarkRuleCompileCached`).
-- **The 1 000 and 2 000 rows are the same** to within run-to-run noise. Past
-  `scope.DefaultMaxMembers` the extra objects are never visited, so the worst
-  case is a constant a host can budget for rather than a function of the object
-  population. `TestEnumerateRuleBackedStaysBounded` pins that ungated.
-- **A bound-limit enumeration is ~4.2 ms**, roughly 1 000× a cached `Check`.
-  That is arithmetic (it *is* ~2 000 evaluations plus 1 000 decisions), but it
-  makes rule-backed `Enumerate` an interactive operation, not a hot-path one.
+- **A bound-limit enumeration is ~6.3 ms at the default bound**, roughly 1 000× a
+  cached `Check`. That is arithmetic (it *is* ~2 000 evaluations plus 1 000
+  decisions), but it makes rule-backed `Enumerate` an interactive operation, not
+  a hot-path one — and raising the bound scales that interactive latency with it.
 - One asymmetry: a smaller `EnumerateRequest.Limit` shortens only the **second**
-  half. The member set is gathered first and bounded by
-  `scope.DefaultMaxMembers` regardless, so `Limit=10` over 1 000 candidates still
-  pays ~1 000 evaluations to build it, then ~10 decisions.
+  half. The member set is gathered first and bounded by the engine's *configured*
+  bound regardless, so `Limit=10` against a bound of 1 000 still pays ~1 000
+  evaluations to build it, then ~10 decisions. The knob that moves the first half
+  is the configured bound, not the request's `Limit`.
 
-These are **informational**. They are deliberately outside `TestCheckNFR`'s
-asserted gate, which is about the cached single-`Check` NFR; rule-backed
-enumeration has no agreed threshold. The numbers are published so a future change
-that regresses them has something to regress against.
+The fixtures wire a discarding `slog` logger. Every row of the sweep is designed
+to land exactly on its bound, which is precisely when the engine emits its
+"enumeration returned exactly its bound" WARN — unwired that goes to
+`slog.Default()`, once per iteration, and the benchmark would be measuring the
+log handler. The warning itself is asserted in
+`engine/enumerate_bound_warning_test.go`, where it belongs.
+
+The absolute figures above are **informational** — they exist so a future change
+that regresses them has something to regress against. What is *asserted* is the
+**shape**, in `TestCheckNFREnumerateBound`.
+
+#### The raised-bound gate (`TestCheckNFREnumerateBound`)
+
+Raising the bound is an operator-facing knob on the worst case, so a regression
+in the enumeration fan-out should be caught by the suite rather than discovered
+in production. The gate rides the same invocation as everything else — its name
+contains `TestCheckNFR`, and `-run` is an unanchored regexp:
+
+```sh
+APERTURE_BENCH_ASSERT=1 go test -run TestCheckNFR ./bench/
+```
+
+Three arms, measured **round-robin** (so a load spike lands on all three rather
+than on whichever happened to be running), each keeping its **minimum** round
+(contention on a shared runner is one-sided, so the fastest round is the closest
+estimate of the machinery's real cost):
+
+| Arm | Candidates | Configured bound | ids |
+|---|---:|---:|---:|
+| `default-bound` | 1 000 | none | 1 000 |
+| `raised-bound/headroom` | 1 000 | 2 000 | 1 000 |
+| `raised-bound/at-the-bound` | 2 000 | 2 000 | **2 000** |
+
+The at-the-bound arm returns **more ids than `engine.DefaultEnumerateLimit`**, and
+that is asserted structurally *before* anything is timed — otherwise this would be
+the fails-by-passing shape `CLAUDE.md` names for `stampedEntities()`: a gate that
+measures the raised bound only in its variable names.
+
+**The threshold is a ratio, not a wall clock**, and that is the whole design.
+A 2 000-id rule-backed enumeration is ~11.6 ms *by design*, so neither `p99Ceiling`
+(1 ms) nor a re-tuned absolute number transfers: the table above already sits ~40 %
+above its first-committed figures, and the `candidates-4000/bound-2000` row alone
+ranged 11.21–16.31 ms (1.45×) inside a single `-count=3` run. A ratio divides
+machine speed and baseline drift out entirely, because both arms are measured on
+the same machine in the same second.
+
+The ratio asserted is **per-candidate cost at the raised bound ÷ per-candidate cost
+at the default bound ≤ 1.5×**, derived from the table above (denominator: the
+1 000-candidate unconfigured row at 6 318 ns/candidate):
+
+| Row | ns/candidate | ratio |
+|---|---:|---:|
+| 1 000 @ bound 2 000 (headroom) | 5 744 | 0.91 |
+| 2 000 @ bound 2 000 (at the bound) | 5 819 | 0.92 |
+| 4 000 @ bound 2 000 (past it) | 6 003 | 0.95 |
+
+and the widest spread of `ns/candidate` between *any* two rows of the whole sweep
+— three orders of magnitude of population, both bounds — is 5 472…6 318 = **1.15×**.
+So 1.5 sits 1.63× above the worst ratio ever measured and 1.3× above the widest
+spread the sweep has produced.
+
+**What it catches:** a super-linear term in the fan-out — a quadratic member
+gather, a bound-sized pre-allocation, a per-candidate rescan, or a cache that
+stops hitting once the member set grows. All present as `ns/candidate` rising with
+the bound. A quadratic member gather injected into `scope.enumerateOfType`
+measures **1.86×** and fails, while the headroom arm correctly stays at 0.99× —
+the ratio really is measuring the bound and not the fixture. The headroom arm
+catches the shape specific to the configurable bound: configuring a ceiling a
+deployment never reaches must cost nothing.
+
+**What it deliberately does not catch:** a uniform slowdown hitting both arms
+equally — by construction, that divides out. The ~40 % drift above is exactly that
+shape, and it is a benchmark question, not a gate question. The blind spot is
+covered by a second assertion that introduces **no new constant**: an `Enumerate`
+makes one authorization decision per returned id, so the arms are additionally
+held to the committed `throughputMin` as decisions/sec (they measure ~180–230 k,
+18–23× the floor).
+
+**Which risk the threshold favours: not flaking on a loaded machine**, explicitly
+and by a wide margin. Observed on an Apple M1 Max across **17 runs** — idle, and
+under 12 then 16 competing CPU-burner processes at load averages up to 24 — both
+ratios stayed within **0.94×–1.10×** against the 1.5× ceiling. The absolute per-id
+cost moved ~15 % under that load; the ratio did not. For contrast, the same two
+populations read straight off `BenchmarkEnumerateRuleBacked` during that load (no
+interleaving, no min-of-rounds) differed by **1.72×** — which is what the
+*measurement design*, rather than the ceiling, is buying.
+
+The cost of the choice is stated plainly: a regression making the raised
+bound 1.0–1.5× dearer *per candidate* than the default passes here and must be
+caught by reading the table above. A gate that cried wolf would be disabled within
+a month, and a disabled gate catches nothing at any threshold.
+
+The whole gate runs in **~0.5 s**.
 
 The counters in the compiled-rule cache are `sync/atomic` for this reason. The
 hit path used to take the cache's **write** lock purely to bump `hits`, which
@@ -645,10 +770,17 @@ and neither has a wall clock in it. They cover the two ways a date fixture fails
 silently: a new operator or vocabulary member that no fixture exercises, and a
 clamping fixture that has stopped clamping.
 `TestEnumerateRuleBackedStaysBounded` is ungated for the same reason: it asserts
-that a rule-backed `Enumerate` over twice `scope.DefaultMaxMembers` candidates
-returns **exactly** the bound — not more (an unbounded member set) and not less
-(a second, tighter limit having crept in, which would be a wrong access-control
-answer rather than a performance tradeoff).
+that a rule-backed `Enumerate` over twice the bound's worth of candidates returns
+**exactly** the bound — not more (an unbounded member set) and not less (a
+second, tighter limit having crept in, which would be a wrong access-control
+answer rather than a performance tradeoff). It does so three ways: unconfigured
+(clamping at `scope.DefaultMaxMembers`), at a bound raised through
+`engine.WithEnumerateLimit` over a population above it (clamping at the raised
+number), and at a raised bound above the population (no clamp at all, returning
+more ids than the default ever could). The last two additionally assert the
+result **exceeds** `engine.DefaultEnumerateLimit`, so a raised bound that
+silently fell back to 1 000 anywhere along engine clamp → scope gather → provider
+list fails here rather than passing as a tautology.
 
 **All gates now pass.** Three were failing by design as of E5-S2, left asserting
 the honest budget rather than relaxed to green — the numbers were the

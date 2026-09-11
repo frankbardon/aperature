@@ -45,6 +45,11 @@ func mcpCommand() *ucli.Command {
 				Name:  "store",
 				Usage: "DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path",
 			},
+			// The agent-facing surface is bounded by the SAME configured ceiling as
+			// `serve` and the one-shot commands. An MCP client that could enumerate
+			// past the number the operator set would be the widest possible place for
+			// the two to disagree.
+			enumerateLimitFlag(),
 		},
 		Action: runMCP,
 	}
@@ -59,14 +64,17 @@ func mcpCommand() *ucli.Command {
 // aperture_enumerate carrying `Fields` could only report
 // APERTURE_PROVIDER_UNREGISTERED however well the seed declared its objects.
 //
+// cmd is the parsed `aperture mcp` command, read for the shared decision
+// configuration the whole binary honours (today --enumerate-limit).
+//
 // warnings receives the seed's provider/objects collision report. stdout is the
 // MCP transport, so the caller passes stderr.
 //
 // The stack is returned alongside the facade because it OWNS resources — the
 // seed's database pools — and the facade does not: something has to outlive this
 // call to close them. Callers defer stack.Close().
-func mcpService(store model.Storage, seedPath string, warnings io.Writer) (*service.Service, decisionStack, error) {
-	stack, err := buildDecisionStack(store, seedPath)
+func mcpService(cmd *ucli.Command, store model.Storage, seedPath string, warnings io.Writer) (*service.Service, decisionStack, error) {
+	stack, err := buildDecisionStack(cmd, store, seedPath)
 	if err != nil {
 		return nil, decisionStack{}, err
 	}
@@ -84,7 +92,7 @@ func runMCP(ctx context.Context, cmd *ucli.Command) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	svc, stack, err := mcpService(store, cmd.String("seed"), cmd.ErrWriter)
+	svc, stack, err := mcpService(cmd, store, cmd.String("seed"), cmd.ErrWriter)
 	if err != nil {
 		return err
 	}

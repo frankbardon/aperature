@@ -12,6 +12,8 @@ import (
 	"github.com/frankbardon/aperture/rules"
 	"github.com/frankbardon/aperture/seed"
 	"github.com/frankbardon/aperture/service"
+
+	ucli "github.com/urfave/cli/v3"
 )
 
 // decisionStack is the fully-wired decision graph every Aperture surface shares:
@@ -131,7 +133,30 @@ func (s decisionStack) reportCollisions(w io.Writer) {
 // engOpts are per-command engine options appended after the shared ones — that is
 // how `serve` adds --enforce-membership without forcing it on the one-shot
 // commands.
-func buildDecisionStack(store model.Storage, seedPath string, engOpts ...engine.Option) (decisionStack, error) {
+//
+// That split is a trap for anything that is NOT per-command. The enumeration
+// bound is the worked example: wiring it as an engOpt the way
+// --enforce-membership is wired would have given `serve` the configured ceiling
+// and left `aperture enumerate` on 1000, two surfaces of one binary disagreeing
+// about the same question with nothing anywhere reporting it. So cmd is taken
+// here, and the flags that configure the PROCESS are read through
+// sharedEngineOptions into the shared set below, where no command can fail to
+// inherit them. Anything genuinely serve-shaped still arrives as an engOpt.
+//
+// cmd is the command whose flags were parsed. A command that declares none of
+// the shared flags (or a bare &ucli.Command{} in a test) resolves every one of
+// them to "unset", which is the library's own default and the behaviour this
+// builder had before they existed.
+func buildDecisionStack(cmd *ucli.Command, store model.Storage, seedPath string, engOpts ...engine.Option) (decisionStack, error) {
+	// Resolved FIRST, before a seed is read or a connection pool is opened: a
+	// malformed configured value is an operator typo, and it must fail the command
+	// rather than fail it later holding resources this function would then have to
+	// unwind.
+	shared, err := sharedEngineOptions(cmd)
+	if err != nil {
+		return decisionStack{}, err
+	}
+
 	doc, err := seedDocument(seedPath)
 	if err != nil {
 		return decisionStack{}, err
@@ -212,7 +237,7 @@ func buildDecisionStack(store model.Storage, seedPath string, engOpts ...engine.
 	ruleSource := service.NewStorageRuleSource(store)
 	scopeDeps.Rules = rules.NewEngine(ruleSource, fetcher, ruleOpts...)
 
-	opts := make([]engine.Option, 0, len(engOpts)+3)
+	opts := make([]engine.Option, 0, len(shared)+len(engOpts)+3)
 	opts = append(opts, engine.WithScopeResolution(nil, scopeDeps))
 	if metaSource != nil {
 		opts = append(opts, engine.WithMetadata(metaSource))
@@ -225,6 +250,12 @@ func buildDecisionStack(store model.Storage, seedPath string, engOpts ...engine.
 		// empty result that reads as "no access".
 		opts = append(opts, engine.WithReferences(reg))
 	}
+	// Shared before per-command, so a surface that genuinely needs to override a
+	// shared option still can — and so the scopeDeps LITERAL above inherits the
+	// configured bound: engine.New stamps it into the deps after every option has
+	// run (engine.stampScopeBound), which is what keeps the member gather and the
+	// result cap one number on this path.
+	opts = append(opts, shared...)
 	opts = append(opts, engOpts...)
 
 	return decisionStack{

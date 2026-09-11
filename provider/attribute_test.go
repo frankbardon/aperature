@@ -518,7 +518,34 @@ func TestAttributeEnumerate(t *testing.T) {
 		}
 	})
 
-	t.Run("the registry clamps a limit a provider ignored", func(t *testing.T) {
+	t.Run("the registry honors a positive limit a provider ignored", func(t *testing.T) {
+		// This is the system-tier admin read of a directory, so a caller asking
+		// for more than DefaultListLimit gets more than DefaultListLimit: the
+		// registry re-enforces the limit on what a provider returns without
+		// clamping it down to a number of its own.
+		const want = DefaultListLimit + 50
+		many := make([]AttributeRecord, want+25)
+		for i := range many {
+			many[i] = AttributeRecord{ID: fmt.Sprintf("u-%d", i)}
+		}
+		ignoring := &countingAttributes{records: many}
+		r := NewAttributeRegistry()
+		r.MustRegister(AttributeSlotUser, ignoring)
+		got, err := r.Enumerate(ctx, AttributeSlotUser, AttributeFilter{Limit: want})
+		if err != nil {
+			t.Fatalf("enumerate: %v", err)
+		}
+		if len(got) != want {
+			t.Fatalf("got %d records, want the caller's limit of %d", len(got), want)
+		}
+		// The provider must have SEEN the limit the caller asked for, not a
+		// number the registry substituted and then truncated to afterwards.
+		if ignoring.lastLimit != want {
+			t.Fatalf("provider saw limit %d, want the caller's %d", ignoring.lastLimit, want)
+		}
+	})
+
+	t.Run("a non-positive limit still means DefaultListLimit", func(t *testing.T) {
 		many := make([]AttributeRecord, DefaultListLimit+50)
 		for i := range many {
 			many[i] = AttributeRecord{ID: fmt.Sprintf("u-%d", i)}
@@ -531,10 +558,10 @@ func TestAttributeEnumerate(t *testing.T) {
 			t.Fatalf("enumerate: %v", err)
 		}
 		if len(got) != DefaultListLimit {
-			t.Fatalf("got %d records, want the DefaultListLimit clamp of %d", len(got), DefaultListLimit)
+			t.Fatalf("got %d records, want the DefaultListLimit default of %d", len(got), DefaultListLimit)
 		}
 		if ignoring.lastLimit != DefaultListLimit {
-			t.Fatalf("provider saw limit %d, want the clamped %d", ignoring.lastLimit, DefaultListLimit)
+			t.Fatalf("provider saw limit %d, want the substituted %d", ignoring.lastLimit, DefaultListLimit)
 		}
 	})
 

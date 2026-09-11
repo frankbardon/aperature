@@ -220,7 +220,7 @@ func TestACSVAttributeFileThatWillNotParseFailsTheBoot(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	if _, err := buildDecisionStack(store, seedPath); err == nil {
+	if _, err := buildDecisionStack(unconfigured(), store, seedPath); err == nil {
 		t.Fatal("the stack booted with an attribute file that does not parse")
 	}
 }

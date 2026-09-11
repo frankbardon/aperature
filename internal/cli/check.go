@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
 
+	"github.com/frankbardon/aperture/engine"
 	aerr "github.com/frankbardon/aperture/errors"
 	"github.com/frankbardon/aperture/seed"
 	"github.com/frankbardon/aperture/service"
@@ -38,6 +40,12 @@ func checkCommand() *ucli.Command {
 				Usage: "active account the decision is scoped to",
 				Value: seed.ExampleAccount,
 			},
+			// The process-wide enumeration bound, carried by every command that
+			// decides so the CLI and `serve` cannot be configured apart. `check`
+			// decides about one object and never enumerates, but it builds the same
+			// stack through the same builder, and a flag missing from one decision
+			// command is exactly how the two surfaces drifted in the first place.
+			enumerateLimitFlag(),
 		},
 		Action: runCheck,
 	}
@@ -57,7 +65,7 @@ func runCheck(ctx context.Context, cmd *ucli.Command) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	stack, err := buildDecisionStack(store, cmd.String("seed"))
+	stack, err := buildDecisionStack(cmd, store, cmd.String("seed"))
 	if err != nil {
 		return err
 	}
@@ -116,12 +124,17 @@ func enumerateCommand() *ucli.Command {
 			"  --via account:acme/dataset:x.current_brands\n\n" +
 			"A holder you may not read yields an EMPTY list and no error, which is deliberate:\n" +
 			"\"you may not see dataset X\" and \"dataset X lists nothing you may see\" must not be\n" +
-			"tellable apart. Restriction, like filtering, happens before --limit.",
+			"tellable apart. Restriction, like filtering, happens before --limit.\n\n" +
+			"--limit and --enumerate-limit are two different bounds. --limit is THIS REQUEST's\n" +
+			"cap; --enumerate-limit is the DEPLOYMENT's ceiling, the same value `aperture serve`\n" +
+			"honours, and it is what a --limit larger than it is clamped down to. A --limit of\n" +
+			"zero or less asks for the ceiling.",
 		Flags: append(append([]ucli.Flag{
 			&ucli.StringFlag{Name: "seed", Usage: "path to a JSON/YAML seed model (defaults to the embedded example)"},
 			&ucli.StringFlag{Name: "store", Usage: "DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path"},
 			&ucli.StringFlag{Name: "account", Usage: "active account the enumeration is scoped to", Value: seed.ExampleAccount},
-			&ucli.IntFlag{Name: "limit", Usage: "cap the number of returned object ids (<=0 means the default)"},
+			&ucli.IntFlag{Name: "limit", Usage: "cap the number of returned object ids for THIS request, clamped down to the deployment's --enumerate-limit ceiling (<=0 means that ceiling, which is " + strconv.Itoa(engine.DefaultEnumerateLimit) + " unless configured)"},
+			enumerateLimitFlag(),
 		}, metadataFilterFlags()...), referenceEdgeFlags()...),
 		Action: runEnumerate,
 	}
@@ -149,7 +162,7 @@ func runEnumerate(ctx context.Context, cmd *ucli.Command) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	stack, err := buildDecisionStack(store, cmd.String("seed"))
+	stack, err := buildDecisionStack(cmd, store, cmd.String("seed"))
 	if err != nil {
 		return err
 	}
@@ -188,6 +201,7 @@ func identifiersCommand() *ucli.Command {
 			&ucli.StringFlag{Name: "seed", Usage: "path to a JSON/YAML seed model (defaults to the embedded example)"},
 			&ucli.StringFlag{Name: "store", Usage: "DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path"},
 			&ucli.StringSliceFlag{Name: "exclude", Usage: "id to omit from the result (repeatable); expands an exclusive allowance"},
+			enumerateLimitFlag(),
 		},
 		Action: runIdentifiers,
 	}
@@ -205,7 +219,7 @@ func runIdentifiers(ctx context.Context, cmd *ucli.Command) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	stack, err := buildDecisionStack(store, cmd.String("seed"))
+	stack, err := buildDecisionStack(cmd, store, cmd.String("seed"))
 	if err != nil {
 		return err
 	}
@@ -234,6 +248,7 @@ func explainCommand() *ucli.Command {
 			&ucli.StringFlag{Name: "seed", Usage: "path to a JSON/YAML seed model (defaults to the embedded example)"},
 			&ucli.StringFlag{Name: "store", Usage: "DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path"},
 			&ucli.StringFlag{Name: "account", Usage: "active account the decision is scoped to", Value: seed.ExampleAccount},
+			enumerateLimitFlag(),
 		},
 		Action: runExplain,
 	}
@@ -251,7 +266,7 @@ func runExplain(ctx context.Context, cmd *ucli.Command) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	stack, err := buildDecisionStack(store, cmd.String("seed"))
+	stack, err := buildDecisionStack(cmd, store, cmd.String("seed"))
 	if err != nil {
 		return err
 	}

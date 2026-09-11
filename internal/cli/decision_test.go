@@ -91,6 +91,13 @@ objects:
     metadata: {tags: "public"}
 `
 
+// unconfigured is the command a test passes buildDecisionStack when the shared
+// configuration is not what it is asserting about: a command declaring no flags,
+// which resolves every shared setting to "unset" and therefore to the library's
+// own defaults. A test that DOES care drives the real flag set instead — see
+// enumerate_limit_test.go.
+func unconfigured() *ucli.Command { return &ucli.Command{} }
+
 // writeRuleBackedSeed materialises the fixture and returns its path.
 func writeRuleBackedSeed(t *testing.T) string {
 	t.Helper()
@@ -284,7 +291,7 @@ func TestServeAndOneShotCommandsShareOneStack(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	stack, err := buildDecisionStack(store, seedPath)
+	stack, err := buildDecisionStack(unconfigured(), store, seedPath)
 	if err != nil {
 		t.Fatalf("buildDecisionStack: %v", err)
 	}
@@ -319,7 +326,7 @@ func serverService(t *testing.T, ctx context.Context, seedPath string) *service.
 		t.Fatalf("buildStore: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	stack, err := buildDecisionStack(store, seedPath)
+	stack, err := buildDecisionStack(unconfigured(), store, seedPath)
 	if err != nil {
 		t.Fatalf("buildDecisionStack: %v", err)
 	}

@@ -239,14 +239,17 @@ func (r *AttributeRegistry) Fetch(ctx context.Context, slot AttributeSlot, id st
 // Enumerate returns up to filter.Limit records of slot that satisfy
 // filter.Fields, by querying the slot's provider and re-enforcing both bounds on
 // what comes back. It opportunistically warms the slot's cache with each
-// returned bag, since the provider call already paid to produce it. A
-// non-positive limit — and any limit above it — clamps to DefaultListLimit, so
-// no caller can materialise an unbounded directory off a provider.
+// returned bag, since the provider call already paid to produce it. A positive
+// limit is honoured as given; a non-positive one means DefaultListLimit.
 //
-// This is the SYSTEM-TIER ADMIN READ of a directory. It is not a
-// scope-resolution source, and its signature is built so it cannot be mistaken
-// for one — see the type doc on AttributeRegistry for why each part of it
-// differs from scope.ObjectLister.List.
+// This read is UNCAPPED on purpose. It is the SYSTEM-TIER ADMIN READ of a
+// directory, and an operator answering "who is in the user slot?" may legitimately
+// need the whole of it — a page size chosen here would only make the honest
+// answer arrive in pieces. It is not a scope-resolution source, and its signature
+// is built so it cannot be mistaken for one — see the type doc on
+// AttributeRegistry for why each part of it differs from scope.ObjectLister.List.
+// What keeps it safe is the authority required to reach it (service tier), not a
+// number in this package.
 //
 // Fields is re-enforced through MatchFields rather than trusted to the provider.
 // The object Registry leaves Fields entirely to its provider because there

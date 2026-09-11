@@ -439,11 +439,17 @@ field that makes it look like the seam a scope resolver wants — and shapes get
 wired to what they look like.
 
 `Fields` and `Limit` are re-enforced by the registry on whatever a provider
-returns (`MatchFields`, clamped to `provider.DefaultListLimit` = 1000), so a
-provider that ignores them is still correct, only less efficient — and no caller
-can materialise an unbounded directory. `Enumerate` opportunistically warms the
-slot's cache with each returned bag, since the provider call already paid to
-produce it.
+returns (`MatchFields`, plus the limit), so a provider that ignores them is still
+correct, only less efficient. The limit is **honoured, not clamped down**: a
+positive `Limit` is passed through verbatim and enforced at that value, and
+`provider.DefaultListLimit` (= 1000) is only what a non-positive `Limit` means.
+`Enumerate` is deliberately **uncapped** — it is the system-tier admin read of a
+directory, and an operator asking "who is in the user slot?" may legitimately need
+all of it; a page size chosen inside the registry would only make the honest
+answer arrive in pieces. What keeps the read safe is the authority required to
+reach it (`service.requireAttributeAdmin`), not a number in `provider`.
+`Enumerate` opportunistically warms the slot's cache with each returned bag, since
+the provider call already paid to produce it.
 
 ## Wiring
 

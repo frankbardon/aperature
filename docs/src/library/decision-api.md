@@ -23,10 +23,11 @@ extend that behaviour:
 | Option | Effect |
 |---|---|
 | `WithScopeResolution(registry *scope.Registry, deps ...ScopeDeps)` | Consult each grant's pluggable scope resolver (selected by its permission's scope-strategy) for object membership, instead of only literal pattern matching. A `nil` registry uses `scope.DefaultRegistry()`. |
+| `WithEnumerateLimit(n int)` | Set the ceiling an [enumeration](#enumerate) is bounded by: the value a request with a non-positive `Limit` receives, and the value a larger `Limit` is clamped down to. It is also stamped into the `ScopeDeps` the engine wires, so the member gather and the result cap are one number. A non-positive `n` is **normalised** to `DefaultEnumerateLimit`, never stored — a silently zero bound would make every enumeration read as "no access". |
 | `WithMembershipEnforcement()` | Require the request's principal to be a member of the active account before any grant is consulted. A non-member is denied at the door (a fail-closed default-deny), rather than erroring. Off by default. |
 | `WithMetadata(f MetadataFetcher)` | Supply the object-metadata source `Enumerate`'s [`Fields` filter](#filtering-by-object-metadata) reads through — normally the same `*provider.Registry` wired as the scope lister. Consulted **only** by a request that carries `Fields`. |
 | `WithReferences(r ReferenceSource)` | Supply the declared-reference source `Enumerate`'s [reference edges](#restricting-through-a-declared-reference) are dereferenced through — normally the same `*provider.Registry` again. Consulted **only** by a request that carries `References`; an engine wired without it fails *loudly* for one that does, never with an empty result. |
-| `WithLogger(l *slog.Logger)` | The sink for non-fatal operational findings — today only a skipped [dangling reference](#restricting-through-a-declared-reference), which is invisible to an operator otherwise. Nil, or unset, means `slog.Default()`. It is **not** a decision log: nothing on the `Check` hot path logs. |
+| `WithLogger(l *slog.Logger)` | The sink for non-fatal operational findings — a skipped [dangling reference](#restricting-through-a-declared-reference), and an [enumeration that came back on its bound](#a-result-on-the-bound-is-a-warning). Both are invisible to an operator otherwise, since neither changes the result's shape. Nil, or unset, means `slog.Default()`. It is **not** a decision log: nothing on the `Check` hot path logs. |
 | `WithClock(now func() time.Time)` | Override the engine clock. It governs impersonation time-box expiry only; the non-impersonated path never reads it. Production uses `time.Now`. |
 
 Two further seams return a **shallow copy** of the engine rather than mutating it,
@@ -129,16 +130,18 @@ type EnumerateRequest struct {
 	Pattern    string          // identity pattern bounding the search
 	Fields     map[string]any  // optional object-metadata predicates; nil/empty filters nothing
 	References []ReferenceEdge // optional reference edges; nil/empty restricts nothing
-	Limit      int             // caps the number of returned ids; <= 0 means the default bound
+	Limit      int             // caps the number of returned ids; <= 0 means the configured bound
 }
 ```
 
 `Pattern` both bounds the candidate set and is intersected with each grant's own
 scope — for example `account:acme/**` (everything in the account) or
 `account:acme/document:*` (every document at the account root). `Limit` caps the
-result; a non-positive `Limit` (or one above the default) is clamped to
-`engine.DefaultEnumerateLimit` (1000), so an enumeration can never materialise an
-unbounded set. Object order is deterministic (sorted by canonical id).
+result; a non-positive `Limit` (or one above the bound) is clamped to the bound
+the engine was configured with, so an enumeration can never materialise an
+unbounded set. That bound is `engine.WithEnumerateLimit`'s value, or
+`engine.DefaultEnumerateLimit` (1000) on an engine built without it. Object order
+is deterministic (sorted by canonical id).
 
 ```go
 ids, err := eng.Enumerate(ctx, engine.EnumerateRequest{
@@ -153,6 +156,33 @@ ids, err := eng.Enumerate(ctx, engine.EnumerateRequest{
 An operational failure — a storage fault, an unresolvable scope strategy, or an
 unconfigured object lister an implicit/exclusive grant needs — is returned as a
 coded error, never a silent partial set.
+
+### A result on the bound is a warning
+
+A truncated result and a complete one are the same `[]string`. When an
+enumeration comes back holding **exactly** its effective bound, the engine
+therefore says so through `WithLogger` (`slog.Default()` when none is wired):
+
+```
+WARN engine: enumeration returned exactly its bound; the result may be truncated
+  bound=100 configured_bound=1000 requested_limit=100
+  account=acme action=read pattern=account:acme/project:atlas/**
+```
+
+`bound` is the cap this enumeration actually ran under — your own `Limit` when
+that was the smaller of the two — and `configured_bound` is the engine's ceiling.
+A result **below** the bound logs nothing.
+
+The wording is deliberate: this is a **hint, not an assertion**. A complete set
+that happens to be exactly that size is indistinguishable from a truncated one
+here, so the line never claims anything was dropped. `Enumerate`'s return shape
+is unchanged — there is no truncation flag, and a caller still cannot tell the
+two apart. The intended response is an operator's, not a caller's: raise the
+bound (or the request `Limit`) and ask again.
+
+It is raised at the engine only. One bound governs the engine clamp, the scope
+member gather (`scope.Deps.MaxMembers`) and the provider list alike, so a starve
+further down surfaces here as a result sitting on the bound.
 
 ### Filtering by object metadata
 

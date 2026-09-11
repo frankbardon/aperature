@@ -59,6 +59,11 @@ func serveCommand() *ucli.Command {
 				Usage:   "deny any decision whose principal is not a member of the active account, before grants are consulted (defence-in-depth; lets shared roles be reused across accounts safely)",
 				Sources: ucli.EnvVars("APERTURE_ENFORCE_MEMBERSHIP"),
 			},
+			// Not a serve-only knob, and deliberately not declared here: the bound
+			// governs the process, so it is the SAME flag `check` / `enumerate` /
+			// `identifiers` / `explain` / `mcp` carry, and buildDecisionStack — not
+			// serveEngineOptions — is what applies it. See enumerate_limit.go.
+			enumerateLimitFlag(),
 			&ucli.BoolFlag{
 				Name:  "manage-accounts",
 				Value: true,
@@ -93,6 +98,10 @@ func serveCommand() *ucli.Command {
 // keeps cmd.IsSet meaning "the operator typed this flag" so flag-over-env
 // precedence is unambiguous. Both paths accept strconv.ParseBool's spellings, so
 // the two can never disagree about a value they both accept.
+//
+// --enumerate-limit makes the opposite trade against the same hazard: it KEEPS
+// its EnvVars source, because a string source has no parse for urfave to fail,
+// and does the number parsing itself. See enumerateLimit in enumerate_limit.go.
 func managedEntities(cmd *ucli.Command) (service.ManagedEntities, error) {
 	managed, err := service.ManagedEntitiesFromEnv()
 	if err != nil {
@@ -113,6 +122,32 @@ func managedEntities(cmd *ucli.Command) (service.ManagedEntities, error) {
 	return managed, nil
 }
 
+// serveEngineOptions turns the SERVE-ONLY flags that configure the decision
+// engine into the options buildDecisionStack layers on top of the shared wiring.
+// It is pure flag reading with no I/O, which is why runServe calls it before
+// anything is opened, and it is a function rather than inline code so a test can
+// drive the real flag set and assert against the engine the options actually
+// produce.
+//
+// "Serve-only" is the whole test for belonging here. Membership enforcement is a
+// posture the server takes and the one-shot commands deliberately do not; the
+// enumeration bound is the opposite — it describes the deployment, so it lives
+// in sharedEngineOptions where every command inherits it, and wiring it here
+// would have left `aperture enumerate` answering 1000 while the server answered
+// 1500.
+func serveEngineOptions(cmd *ucli.Command) ([]engine.Option, error) {
+	var opts []engine.Option
+	if cmd.Bool("enforce-membership") {
+		// Defence-in-depth, and serve-specific: a non-member of the active account
+		// is denied before any grant is read, which is what lets a single shared
+		// role (manager, analyst, ...) be reused across customer accounts without
+		// one customer's account-scoped grants leaking to another customer's
+		// members.
+		opts = append(opts, engine.WithMembershipEnforcement())
+	}
+	return opts, nil
+}
+
 func runServe(ctx context.Context, cmd *ucli.Command) error {
 	// Resolve the deployment's entity-management posture FIRST, before anything is
 	// opened or created: a malformed APERTURE_MANAGE_* value must fail the boot
@@ -121,6 +156,25 @@ func runServe(ctx context.Context, cmd *ucli.Command) error {
 	// not of a request, so nothing downstream re-reads or mutates it.
 	managed, err := managedEntities(cmd)
 	if err != nil {
+		return err
+	}
+
+	// The engine's own configuration is read in the same breath and for the same
+	// reason: a malformed value must fail the boot before a store is opened, not
+	// once requests are already answered.
+	engOpts, err := serveEngineOptions(cmd)
+	if err != nil {
+		return err
+	}
+
+	// The SHARED configuration is read here too, and the result is thrown away.
+	// buildDecisionStack is what applies it — the enumeration bound governs every
+	// command that decides, so it cannot be wired on serve — but that runs after
+	// the store has been opened and seeded. A malformed --enumerate-limit /
+	// APERTURE_ENUMERATE_LIMIT must fail the boot before a store file is written,
+	// so serve pays for one extra parse of a string it already holds rather than
+	// leaving a database behind on a refused configuration.
+	if _, err := sharedEngineOptions(cmd); err != nil {
 		return err
 	}
 
@@ -148,17 +202,9 @@ func runServe(ctx context.Context, cmd *ucli.Command) error {
 	// Build the shared decision stack — object providers, the rules engine over a
 	// storage-backed rule source, and scope resolution — through the SAME builder
 	// `check` / `enumerate` / `identifiers` / `explain` use, so no surface can
-	// answer a question differently from another (see decision.go).
-	var engOpts []engine.Option
-	if cmd.Bool("enforce-membership") {
-		// Defence-in-depth, and serve-specific: a non-member of the active account
-		// is denied before any grant is read, which is what lets a single shared
-		// role (manager, analyst, ...) be reused across customer accounts without
-		// one customer's account-scoped grants leaking to another customer's
-		// members.
-		engOpts = append(engOpts, engine.WithMembershipEnforcement())
-	}
-	stack, err := buildDecisionStack(store, cmd.String("seed"), engOpts...)
+	// answer a question differently from another (see decision.go). The
+	// serve-specific engine options resolved above are layered on last.
+	stack, err := buildDecisionStack(cmd, store, cmd.String("seed"), engOpts...)
 	if err != nil {
 		return err
 	}

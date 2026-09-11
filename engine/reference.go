@@ -121,9 +121,10 @@ func WithReferences(r ReferenceSource) Option {
 }
 
 // WithLogger sets the logger the engine reports non-fatal operational findings
-// to — today only a dangling object reference, which is skipped rather than
-// raised and would otherwise be invisible to an operator. A nil logger, or none
-// at all, means slog.Default().
+// to — a dangling object reference, which is skipped rather than raised, and an
+// enumeration that came back holding exactly its bound. Both would otherwise be
+// invisible to an operator: neither changes the result's shape. A nil logger, or
+// none at all, means slog.Default().
 //
 // It is NOT a decision log: the engine logs nothing on the Check hot path.
 func WithLogger(l *slog.Logger) Option {
