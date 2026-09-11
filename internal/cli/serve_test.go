@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -141,11 +140,40 @@ func TestManagedEntities_MalformedEnvIsConfigError(t *testing.T) {
 	}
 }
 
-// resolveEngineOptions runs the real `serve` flag set over args and returns the
-// engine options serveEngineOptions makes of it, without booting a server. It is
-// the SAME function runServe calls, so a test driving it cannot pass against a
-// serve command that never wired the flag.
-func resolveEngineOptions(t *testing.T, args ...string) ([]engine.Option, error) {
+// TestServeEngineOptionsCarryOnlyTheServeOnlyPosture pins what belongs in the
+// per-command half of the split. --enforce-membership is a posture `serve` takes
+// and the one-shot commands deliberately do not, so it is the ONLY option this
+// function produces; a configured value that describes the deployment — the
+// enumeration bound — belongs in sharedEngineOptions, where every command
+// inherits it. Asserting the count is what catches a shared knob being added
+// here by habit, which would leave `aperture enumerate` configured differently
+// from the server it is meant to agree with.
+func TestServeEngineOptionsCarryOnlyTheServeOnlyPosture(t *testing.T) {
+	t.Setenv(envEnumerateLimit, "1500")
+	t.Setenv("APERTURE_ENFORCE_MEMBERSHIP", "")
+
+	opts, err := resolveServeOptions(t)
+	if err != nil {
+		t.Fatalf("serveEngineOptions: %v", err)
+	}
+	if len(opts) != 0 {
+		t.Fatalf("serve with no posture flag produced %d engine option(s), want none — a configured bound must not be wired here", len(opts))
+	}
+
+	opts, err = resolveServeOptions(t, "--enforce-membership")
+	if err != nil {
+		t.Fatalf("serveEngineOptions: %v", err)
+	}
+	if len(opts) != 1 {
+		t.Fatalf("--enforce-membership produced %d engine option(s), want exactly one", len(opts))
+	}
+}
+
+// resolveServeOptions runs the real `serve` flag set over args and returns the
+// SERVE-ONLY engine options serveEngineOptions makes of it, without booting a
+// server. It is the SAME function runServe calls, so a test driving it cannot
+// pass against a serve command that never wired the flag.
+func resolveServeOptions(t *testing.T, args ...string) ([]engine.Option, error) {
 	t.Helper()
 	var (
 		opts []engine.Option
@@ -163,192 +191,6 @@ func resolveEngineOptions(t *testing.T, args ...string) ([]engine.Option, error)
 		t.Fatalf("parsing %v: %v", args, runErr)
 	}
 	return opts, err
-}
-
-// enumerateUnderServeFlags is the enumeration `serve` would answer, built from the engine
-// options the given serve arguments resolve to. The fixture holds exactly three
-// documents and alice may list all of them, so the returned count IS the bound
-// whenever the bound is below three — which is what makes the configured value
-// observable rather than merely stored.
-func enumerateUnderServeFlags(t *testing.T, args ...string) []string {
-	t.Helper()
-	opts, err := resolveEngineOptions(t, args...)
-	if err != nil {
-		t.Fatalf("serveEngineOptions: %v", err)
-	}
-
-	ctx := context.Background()
-	seedPath := writeRuleBackedSeed(t)
-	store, err := buildStore(ctx, "", seedPath)
-	if err != nil {
-		t.Fatalf("buildStore: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	stack, err := buildDecisionStack(store, seedPath, opts...)
-	if err != nil {
-		t.Fatalf("buildDecisionStack: %v", err)
-	}
-	t.Cleanup(func() { _ = stack.Close() })
-
-	ids, err := stack.eng.Enumerate(ctx, engine.EnumerateRequest{
-		Account:   "acme",
-		Principal: "alice",
-		Action:    "list",
-		Pattern:   "account:acme/**",
-	})
-	if err != nil {
-		t.Fatalf("Enumerate: %v", err)
-	}
-	slices.Sort(ids)
-	return ids
-}
-
-// TestEnumerateLimit_UnconfiguredIsTheEngineDefault asserts an operator who
-// passes nothing and sets nothing adds NO option, which is what leaves the
-// engine on DefaultEnumerateLimit and serve answering exactly as it did before
-// the flag existed. Asserting the absence of the option is the precise claim:
-// with a three-object fixture, a bound of 1000 and a bound of 1_000_000 look
-// identical.
-func TestEnumerateLimit_UnconfiguredIsTheEngineDefault(t *testing.T) {
-	t.Setenv(envEnumerateLimit, "")
-
-	opts, err := resolveEngineOptions(t)
-	if err != nil {
-		t.Fatalf("serveEngineOptions: %v", err)
-	}
-	if len(opts) != 0 {
-		t.Fatalf("an unconfigured serve carries %d engine options, want none", len(opts))
-	}
-	if got := enumerateUnderServeFlags(t); len(got) != 3 {
-		t.Fatalf("unconfigured enumerate returned %v, want all three documents", got)
-	}
-}
-
-// TestEnumerateLimit_EnvIsRead asserts the env var alone (no flag) reaches the
-// engine — the whole point of carrying a ucli.EnvVars source.
-func TestEnumerateLimit_EnvIsRead(t *testing.T) {
-	t.Setenv(envEnumerateLimit, "2")
-
-	if got := enumerateUnderServeFlags(t); len(got) != 2 {
-		t.Fatalf("%s=2 returned %v, want two ids", envEnumerateLimit, got)
-	}
-}
-
-// TestEnumerateLimit_FlagBeatsEnv pins urfave's native flag > env > default
-// precedence in BOTH directions, so the flag is a real override rather than a
-// second way to say the same number.
-func TestEnumerateLimit_FlagBeatsEnv(t *testing.T) {
-	t.Run("flag raises what env lowered", func(t *testing.T) {
-		t.Setenv(envEnumerateLimit, "1")
-		if got := enumerateUnderServeFlags(t, "--enumerate-limit=2"); len(got) != 2 {
-			t.Fatalf("the flag did not override the env var: %v", got)
-		}
-	})
-
-	t.Run("flag lowers what env raised", func(t *testing.T) {
-		t.Setenv(envEnumerateLimit, "2")
-		if got := enumerateUnderServeFlags(t, "--enumerate-limit=1"); len(got) != 1 {
-			t.Fatalf("the flag did not override the env var: %v", got)
-		}
-	})
-}
-
-// TestEnumerateLimit_MalformedIsConfigError asserts a value that is not a number
-// is an Aperture-coded error from BOTH sources. This is what the StringFlag
-// buys: a ucli.IntFlag carrying the same EnvVars source would have failed the
-// command with urfave's own uncoded parse error before the action ran.
-func TestEnumerateLimit_MalformedIsConfigError(t *testing.T) {
-	t.Run("from the environment", func(t *testing.T) {
-		t.Setenv(envEnumerateLimit, "banana")
-		_, err := resolveEngineOptions(t)
-		if got := aerr.CodeOf(err); got != aerr.APERTURE_CONFIG_INVALID {
-			t.Fatalf("code = %s, want %s (err=%v)", got, aerr.APERTURE_CONFIG_INVALID, err)
-		}
-		if !strings.Contains(err.Error(), "banana") || !strings.Contains(err.Error(), envEnumerateLimit) {
-			t.Fatalf("the error names neither the setting nor the value: %v", err)
-		}
-	})
-
-	t.Run("from the flag", func(t *testing.T) {
-		t.Setenv(envEnumerateLimit, "")
-		_, err := resolveEngineOptions(t, "--enumerate-limit=banana")
-		if got := aerr.CodeOf(err); got != aerr.APERTURE_CONFIG_INVALID {
-			t.Fatalf("code = %s, want %s (err=%v)", got, aerr.APERTURE_CONFIG_INVALID, err)
-		}
-	})
-}
-
-// TestEnumerateLimit_NonPositiveIsConfigError asserts a value that parses but
-// cannot be a ceiling — zero, or any negative — is refused at the boundary from
-// BOTH sources, rather than reaching engine.WithEnumerateLimit and being
-// normalised away.
-//
-// This is the half a type check cannot catch: -5 is a perfectly good int, so the
-// StringFlag/IntFlag argument buys nothing here. The hazard is the silent
-// fallback — engine.WithEnumerateLimit deliberately normalises a non-positive
-// bound to DefaultEnumerateLimit (correct for a Go embedder passing a computed
-// number; see engine.TestEnumerateLimit* for the library side), which would
-// leave an operator who typed -5 being served 1000 while believing otherwise.
-// Lenient normalisation in the library, input validation at the boundary. Do not
-// "fix" this by changing the engine.
-func TestEnumerateLimit_NonPositiveIsConfigError(t *testing.T) {
-	for _, raw := range []string{"0", "-1", "-5", "-1500"} {
-		t.Run("from the environment/"+raw, func(t *testing.T) {
-			t.Setenv(envEnumerateLimit, raw)
-			opts, err := resolveEngineOptions(t)
-			assertRejectedEnumerateLimit(t, opts, err, raw)
-		})
-
-		t.Run("from the flag/"+raw, func(t *testing.T) {
-			// Empty, not unset: the flag must be what fails, not a leftover variable.
-			t.Setenv(envEnumerateLimit, "")
-			opts, err := resolveEngineOptions(t, "--enumerate-limit="+raw)
-			assertRejectedEnumerateLimit(t, opts, err, raw)
-		})
-	}
-}
-
-// assertRejectedEnumerateLimit is the shared claim behind every refusal of a
-// configured bound: the boot fails with one APERTURE_CONFIG_INVALID naming both
-// spellings of the setting and the value it rejected, and NO engine option is
-// produced — an option carrying a value the engine would normalise is exactly
-// the silent fallback these tests exist to forbid.
-func assertRejectedEnumerateLimit(t *testing.T, opts []engine.Option, err error, raw string) {
-	t.Helper()
-	if err == nil {
-		t.Fatalf("--enumerate-limit=%s was accepted; it must fail the boot", raw)
-	}
-	if got := aerr.CodeOf(err); got != aerr.APERTURE_CONFIG_INVALID {
-		t.Fatalf("code = %s, want %s (err=%v)", got, aerr.APERTURE_CONFIG_INVALID, err)
-	}
-	if d := codedDepth(err); d != 1 {
-		t.Errorf("coded chain depth = %d, want exactly 1 (err=%v)", d, err)
-	}
-	msg := err.Error()
-	for _, want := range []string{raw, "--enumerate-limit", envEnumerateLimit} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the error does not name %q: %v", want, err)
-		}
-	}
-	if len(opts) != 0 {
-		t.Errorf("a refused bound still produced %d engine option(s); the value must never reach the engine", len(opts))
-	}
-}
-
-// codedDepth counts the Aperture-coded errors in a chain. A same-code re-stamp
-// is invisible to CodeOf, so depth is what proves the refusal is constructed
-// once rather than wrapped on the way out.
-func codedDepth(err error) int {
-	depth := 0
-	for err != nil {
-		var ce *aerr.CodedError
-		if !errors.As(err, &ce) {
-			break
-		}
-		depth++
-		err = errors.Unwrap(ce)
-	}
-	return depth
 }
 
 // TestServeFlagsNameTheirEnvVars asserts each --manage-* flag's usage text names

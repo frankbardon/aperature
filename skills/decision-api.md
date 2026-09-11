@@ -93,12 +93,21 @@ empty result that reads exactly like "no access" — so a misconfiguration degra
 to the documented default. Parse and validate an operator-supplied value at the
 surface that reads it, where an `APERTURE_CONFIG_INVALID` can still reach them.
 
-`aperture serve` is one such surface: `--enumerate-limit` /
-`APERTURE_ENUMERATE_LIMIT` (flag > env > default). It is declared as a
-`ucli.StringFlag` and parsed by the CLI on purpose — an `IntFlag` carrying the
-same env source lets urfave fail the command with its own **uncoded** parse
-error before the action runs, so a mistyped value would report something other
-than `APERTURE_CONFIG_INVALID`.
+The CLI is one such surface: `--enumerate-limit` / `APERTURE_ENUMERATE_LIMIT`
+(flag > env > default). It is declared as a `ucli.StringFlag` and parsed by the
+CLI on purpose — an `IntFlag` carrying the same env source lets urfave fail the
+command with its own **uncoded** parse error before the action runs, so a
+mistyped value would report something other than `APERTURE_CONFIG_INVALID`.
+
+**The bound belongs to the process, not to `serve`.** Every command that decides
+carries the same flag — `serve`, `check`, `enumerate`, `identifiers`, `explain`,
+`mcp` — and the option is applied in the SHARED half of `internal/cli`'s
+`buildDecisionStack`, never as one of the per-command `engOpts`. That split
+exists so `serve` can add `--enforce-membership` without forcing it on the
+one-shot commands, and it is exactly the wrong place for a bound: a deployment
+configured to 1500 whose `aperture enumerate` still answered 1000 would be two
+surfaces of one binary disagreeing about the same question, with nothing in
+either answer saying so.
 
 The CLI refuses `0` and every negative as well as `banana`, with the same code
 and before the store is opened. That is not a contradiction of the normalisation

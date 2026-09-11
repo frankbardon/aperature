@@ -109,7 +109,12 @@ aperture enumerate [options] <principal> <action> <pattern>
 
 `enumerate` turns the question around: instead of one object, it lists the
 object ids under a `<pattern>` that the principal may take `<action>` on, one id
-per line. `--limit` caps the result count. Enumeration expands objects from the
+per line. `--limit` caps the result count **for this request**; the deployment's
+own ceiling is `--enumerate-limit` / `APERTURE_ENUMERATE_LIMIT` (default `1000`),
+which a larger `--limit` is clamped **down** to and which a `--limit` of zero or
+less asks for. That ceiling is the same one `aperture serve` honours — it
+configures the process, not the command — so the CLI and the server can never be
+bounded differently. Enumeration expands objects from the
 object sources the model declares — `providers:` (a file- or database-backed
 provider per type) and `objects:` (metadata declared inline) — so a model with
 neither (like the embedded example) yields an empty list. Run `enumerate` against

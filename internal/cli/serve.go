@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -28,12 +26,6 @@ import (
 // shutdownTimeout bounds how long serve waits for in-flight requests to drain on
 // SIGINT/SIGTERM before forcing the listener closed.
 const shutdownTimeout = 10 * time.Second
-
-// envEnumerateLimit is the environment variable --enumerate-limit reads when the
-// operator did not type the flag. It is named in the flag's usage text (see
-// TestServeFlagsNameTheirEnvVars), so the constant is the single spelling the
-// flag, the help output and the tests all share.
-const envEnumerateLimit = "APERTURE_ENUMERATE_LIMIT"
 
 // serveCommand is `aperture serve`: it hand-wires the dependency graph
 // (storage -> engine -> service -> HTTP server), boots a net/http server, and
@@ -67,11 +59,11 @@ func serveCommand() *ucli.Command {
 				Usage:   "deny any decision whose principal is not a member of the active account, before grants are consulted (defence-in-depth; lets shared roles be reused across accounts safely)",
 				Sources: ucli.EnvVars("APERTURE_ENFORCE_MEMBERSHIP"),
 			},
-			&ucli.StringFlag{
-				Name:    "enumerate-limit",
-				Usage:   "maximum number of object ids one enumeration returns, and the ceiling a larger request Limit is clamped down to (a whole number greater than zero; default " + strconv.Itoa(engine.DefaultEnumerateLimit) + "; overrides " + envEnumerateLimit + ")",
-				Sources: ucli.EnvVars(envEnumerateLimit),
-			},
+			// Not a serve-only knob, and deliberately not declared here: the bound
+			// governs the process, so it is the SAME flag `check` / `enumerate` /
+			// `identifiers` / `explain` / `mcp` carry, and buildDecisionStack — not
+			// serveEngineOptions — is what applies it. See enumerate_limit.go.
+			enumerateLimitFlag(),
 			&ucli.BoolFlag{
 				Name:  "manage-accounts",
 				Value: true,
@@ -109,7 +101,7 @@ func serveCommand() *ucli.Command {
 //
 // --enumerate-limit makes the opposite trade against the same hazard: it KEEPS
 // its EnvVars source, because a string source has no parse for urfave to fail,
-// and does the number parsing itself. See enumerateLimit below.
+// and does the number parsing itself. See enumerateLimit in enumerate_limit.go.
 func managedEntities(cmd *ucli.Command) (service.ManagedEntities, error) {
 	managed, err := service.ManagedEntitiesFromEnv()
 	if err != nil {
@@ -130,89 +122,19 @@ func managedEntities(cmd *ucli.Command) (service.ManagedEntities, error) {
 	return managed, nil
 }
 
-// enumerateLimit resolves the enumeration bound this process serves with, in
-// precedence order: the engine's own DefaultEnumerateLimit, overridden by
-// APERTURE_ENUMERATE_LIMIT, overridden by a --enumerate-limit the operator
-// actually typed. ok is false when neither was given, which leaves the engine on
-// its documented default and serve behaving exactly as it did before the flag
-// existed.
+// serveEngineOptions turns the SERVE-ONLY flags that configure the decision
+// engine into the options buildDecisionStack layers on top of the shared wiring.
+// It is pure flag reading with no I/O, which is why runServe calls it before
+// anything is opened, and it is a function rather than inline code so a test can
+// drive the real flag set and assert against the engine the options actually
+// produce.
 //
-// The flag is a StringFlag that carries an EnvVars source and is parsed HERE,
-// rather than a ucli.IntFlag that would parse itself. That is deliberate, and it
-// is the opposite trade from the --manage-* flags above, so both halves of the
-// reasoning belong together:
-//
-//   - An IntFlag with an env source hands the parse to urfave, which fails the
-//     command with its own uncoded "could not parse ... from environment" error
-//     before the action ever runs. APERTURE_ENUMERATE_LIMIT=banana would then
-//     report something other than APERTURE_CONFIG_INVALID — the same hazard that
-//     kept the --manage-* bools off EnvVars entirely.
-//   - A StringFlag has no parse to fail: urfave's value setter accepts any
-//     string verbatim, so a malformed value reaches this function and becomes a
-//     coded error the operator can act on.
-//
-// Keeping the EnvVars source (which --manage-* could not) is worth the manual
-// Atoi: precedence stays urfave's NATIVE flag > env > default — the env source is
-// applied only when the flag was not set on the command line — so there is no
-// hand-rolled resolution order here that could drift from the one every other
-// flag obeys. The --manage-* flags needed their own reader for a second reason
-// that does not apply to a string: an env-sourced BoolFlag also sets
-// hasBeenSet, which would make cmd.IsSet stop meaning "the operator typed this".
-//
-// This reads the value and checks it is SAYABLE — a whole number greater than
-// zero. It does not decide what an accepted number MEANS: the clamping is the
-// engine's (engine.WithEnumerateLimit), which is why every value that survives
-// the two checks below is handed over unexamined.
-func enumerateLimit(cmd *ucli.Command) (int, bool, error) {
-	raw := strings.TrimSpace(cmd.String("enumerate-limit"))
-	if raw == "" {
-		return 0, false, nil
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, false, badEnumerateLimit(raw, "is not a whole number")
-	}
-	if n <= 0 {
-		// engine.WithEnumerateLimit NORMALISES a non-positive bound to
-		// DefaultEnumerateLimit rather than storing it, and that is correct for the
-		// library: an Option cannot report an error, and a Go embedder handing over
-		// a computed 0 should get a sane engine instead of a zero bound that reads
-		// as "no access". It is wrong for a human, though — an operator who typed
-		// -5 would be served 1000 while believing the bound is what they wrote,
-		// which is the exact invisibility this flag exists to remove. So the
-		// boundary refuses what the library would have absorbed, and the value
-		// never reaches the option. Lenient normalisation in the library, input
-		// validation at the boundary; both are right.
-		return 0, false, badEnumerateLimit(raw, "must be greater than zero")
-	}
-	return n, true, nil
-}
-
-// badEnumerateLimit builds the single refusal both --enumerate-limit rejections
-// share, so a malformed value and an out-of-range one read identically apart
-// from the reason.
-//
-// The setting and the rejected value go in the MESSAGE, not only in the context
-// map: nothing on the CLI path renders a CodedError's Context, so an operator
-// who mistyped one of two spellings would otherwise be told which code failed
-// but not which knob or what it read. The value is the operator's own input and
-// carries no account data.
-func badEnumerateLimit(raw, why string) error {
-	return aerr.WithContext(aerr.APERTURE_CONFIG_INVALID,
-		fmt.Sprintf("cli: --enumerate-limit / %s %s: %q", envEnumerateLimit, why, raw),
-		map[string]any{
-			"setting": "--enumerate-limit / " + envEnumerateLimit,
-			"value":   raw,
-			"valid":   "a whole number greater than zero, e.g. 1500",
-			"default": strconv.Itoa(engine.DefaultEnumerateLimit) + " — the setting may simply be omitted",
-		})
-}
-
-// serveEngineOptions turns the serve flags that configure the DECISION ENGINE
-// into the options buildDecisionStack layers on top of the shared wiring. It is
-// pure flag reading with no I/O, which is why runServe calls it before anything
-// is opened, and it is a function rather than inline code so a test can drive the
-// real flag set and assert against the engine the options actually produce.
+// "Serve-only" is the whole test for belonging here. Membership enforcement is a
+// posture the server takes and the one-shot commands deliberately do not; the
+// enumeration bound is the opposite — it describes the deployment, so it lives
+// in sharedEngineOptions where every command inherits it, and wiring it here
+// would have left `aperture enumerate` answering 1000 while the server answered
+// 1500.
 func serveEngineOptions(cmd *ucli.Command) ([]engine.Option, error) {
 	var opts []engine.Option
 	if cmd.Bool("enforce-membership") {
@@ -222,18 +144,6 @@ func serveEngineOptions(cmd *ucli.Command) ([]engine.Option, error) {
 		// one customer's account-scoped grants leaking to another customer's
 		// members.
 		opts = append(opts, engine.WithMembershipEnforcement())
-	}
-	limit, ok, err := enumerateLimit(cmd)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		// Hand the configured number to the engine and let the engine decide what
-		// the number MEANS: it clamps every enumeration against it and stamps it
-		// into the scope deps, so the member gather and the result cap stay one
-		// value. An unset bound adds no option at all, which leaves that value at
-		// engine.DefaultEnumerateLimit rather than restating 1000 here.
-		opts = append(opts, engine.WithEnumerateLimit(limit))
 	}
 	return opts, nil
 }
@@ -250,10 +160,21 @@ func runServe(ctx context.Context, cmd *ucli.Command) error {
 	}
 
 	// The engine's own configuration is read in the same breath and for the same
-	// reason: a malformed --enumerate-limit / APERTURE_ENUMERATE_LIMIT must fail
-	// the boot before a store is opened, not once requests are already answered.
+	// reason: a malformed value must fail the boot before a store is opened, not
+	// once requests are already answered.
 	engOpts, err := serveEngineOptions(cmd)
 	if err != nil {
+		return err
+	}
+
+	// The SHARED configuration is read here too, and the result is thrown away.
+	// buildDecisionStack is what applies it — the enumeration bound governs every
+	// command that decides, so it cannot be wired on serve — but that runs after
+	// the store has been opened and seeded. A malformed --enumerate-limit /
+	// APERTURE_ENUMERATE_LIMIT must fail the boot before a store file is written,
+	// so serve pays for one extra parse of a string it already holds rather than
+	// leaving a database behind on a refused configuration.
+	if _, err := sharedEngineOptions(cmd); err != nil {
 		return err
 	}
 
@@ -283,7 +204,7 @@ func runServe(ctx context.Context, cmd *ucli.Command) error {
 	// `check` / `enumerate` / `identifiers` / `explain` use, so no surface can
 	// answer a question differently from another (see decision.go). The
 	// serve-specific engine options resolved above are layered on last.
-	stack, err := buildDecisionStack(store, cmd.String("seed"), engOpts...)
+	stack, err := buildDecisionStack(cmd, store, cmd.String("seed"), engOpts...)
 	if err != nil {
 		return err
 	}
