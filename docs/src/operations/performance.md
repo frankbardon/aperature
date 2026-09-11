@@ -173,33 +173,33 @@ Measured with `BenchmarkEnumerateRuleBacked` on the **worst case on purpose**:
 one account-wide `inclusive;rule=…` grant, a scalar comparison over one metadata
 field, every candidate selected (a rejected candidate is cheaper, because it
 skips the second evaluation), audit off. Apple M1 Max (10 cores), go1.26.5
-darwin/arm64, `-benchtime=2s -count=3`, medians. `bound` is the value passed to
+darwin/arm64, `-benchtime=1s -count=3`, medians. `bound` is the value passed to
 `engine.WithEnumerateLimit`; `—` means unconfigured.
 
 | candidates | bound | ns/op | ids | ns/candidate | allocs/op | B/op |
 |---:|---:|---:|---:|---:|---:|---:|
-| 10 | — | 54 724 | 10 | 5 472 | 596 | 45 060 |
-| 100 | — | 567 891 | 100 | 5 679 | 5 679 | 442 772 |
-| 1 000 | — | 6 317 880 | 1 000 | 6 318 | 56 133 | 4 444 912 |
-| 2 000 | — | 5 929 466 | 1 000 | 5 929 | 56 136 | 4 478 722 |
-| 1 000 | 2 000 | 5 743 803 | 1 000 | 5 744 | 56 127 | 4 444 822 |
-| 2 000 | 2 000 | 11 638 062 | 2 000 | 5 819 | 112 176 | 8 964 388 |
-| 4 000 | 2 000 | 12 005 617 | 2 000 | 6 003 | 112 162 | 9 025 695 |
+| 10 | — | 44 359 | 10 | 4 436 | 496 | 39 311 |
+| 100 | — | 436 078 | 100 | 4 361 | 4 679 | 385 291 |
+| 1 000 | — | 5 058 189 | 1 000 | 5 058 | 46 137 | 3 870 603 |
+| 2 000 | — | 4 733 331 | 1 000 | 4 733 | 46 141 | 3 904 836 |
+| 1 000 | 2 000 | 4 543 591 | 1 000 | 4 544 | 46 131 | 3 870 590 |
+| 2 000 | 2 000 | 11 565 568 | 2 000 | 5 783 | 92 188 | 7 816 610 |
+| 4 000 | 2 000 | 9 170 151 | 2 000 | 4 585 | 92 168 | 7 876 370 |
 
 Four things to take from it:
 
 - **The cost is linear in the bound, not worse.** 1 000 → 2 000 returned ids is
-  1.84× the time, 2.00× the allocations and 2.02× the bytes, and `ns/candidate`
-  stays flat (5 472–6 318) across three orders of magnitude of population *and*
-  across both bounds. Doubling the bound doubles the worst case and no more.
-- **Budget roughly 5.8 µs, 4.5 KB and 56 allocations of transient garbage per id
-  the bound allows.** A bound of 2 000 is a ~11.6 ms, ~9 MB enumeration; a bound
-  of 10 000 is a ~58 ms, ~45 MB one. Even at the default, a rule-backed
+  2.00× the allocations and 2.02× the bytes, and `ns/candidate` stays flat
+  (4 361–5 783) across three orders of magnitude of population *and* across both
+  bounds. Doubling the bound doubles the worst case and no more.
+- **Budget roughly 4.6 µs, 3.9 KB and 46 allocations of transient garbage per id
+  the bound allows.** A bound of 2 000 is a ~9 ms, ~7.8 MB enumeration; a bound
+  of 10 000 is a ~46 ms, ~39 MB one. Even at the default, a rule-backed
   `Enumerate` is ~1 000× a cached `Check` — it is an *interactive* operation, not
   a hot-path one, and raising the bound scales that latency with it.
 - **Headroom a deployment does not use costs nothing.** 1 000 candidates at a
   bound of 2 000 is indistinguishable from the same population unconfigured —
-  5.74 ms vs 6.32 ms, 56 127 vs 56 133 allocations, the same `B/op` to four
+  46 131 vs 46 137 allocations, the same `B/op` to four
   digits. Configuring room you have not grown into is not paid for.
 - **A raised bound clamps exactly as the default one does.** 4 000 candidates at
   a bound of 2 000 costs what 2 000 at that bound costs; past the bound the extra
@@ -208,7 +208,8 @@ Four things to take from it:
 
 **Read the ratios, not the absolutes.** Wall-clock figures here move with
 whatever else the measuring machine is doing — the same benchmark measured 2 348
-ns/eval on a loaded machine and 1 500 ns/eval on a quiet one. (The one durable
+ns/eval on a loaded machine and 1 500 ns/eval on a quiet one, before any code
+changed. (The one durable
 change since these were first recorded is ~3 extra allocations per rule
 evaluation, added deliberately in 2026-08 for the attribute floor bags; the
 repository's `docs/benchmarks.md` accounts for it.) Treat the
