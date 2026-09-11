@@ -2,6 +2,8 @@ package rules
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -233,5 +235,58 @@ func TestCacheHitCountIsExactUnderConcurrency(t *testing.T) {
 	}
 	if st.Entries != 1 {
 		t.Errorf("entries = %d, want 1; stats = %+v", st.Entries, st)
+	}
+}
+
+// TestAMutatedNodeRecompiles is the gate on the cache being CONTENT-addressed
+// rather than node-addressed.
+//
+// rules.Node is an exported struct of exported fields and nothing forbids a host
+// mutating one in place. The cache key is the hash of what the AST renders to at
+// the moment of the call, so a mutated node renders differently, misses, and
+// recompiles — the host's edit takes effect on the very next evaluation.
+//
+// This is the property that makes Engine.compile re-render on EVERY call instead
+// of memoising the rendered source against the node. That render is one of the
+// hottest allocations in the package and the memo is the obvious optimisation,
+// which is exactly why this test exists: the memo would be invisible to every
+// other test here, and the bug it buys is a rule edit that silently keeps
+// authorizing under its old program. In an access-control engine a tightened
+// rule that goes on granting is the worst failure this package has.
+//
+// Making the render CHEAPER is fine and is what the pooled buffer in
+// Engine.compile does. Skipping it is not.
+func TestAMutatedNodeRecompiles(t *testing.T) {
+	eng := NewEngine(MapSource{}, nil)
+	rule := Compare(OpEq, Var("object.tier"), Lit("gold"))
+
+	before, err := eng.Compile(rule)
+	if err != nil {
+		t.Fatalf("compile before: %v", err)
+	}
+	if got := before.Source(); !strings.Contains(got, `"gold"`) {
+		t.Fatalf("source before = %q, want it to carry the gold literal", got)
+	}
+
+	// The host edits the rule in place — tightening "gold" to "platinum".
+	rule.Right.Value = json.RawMessage(`"platinum"`)
+
+	after, err := eng.Compile(rule)
+	if err != nil {
+		t.Fatalf("compile after: %v", err)
+	}
+	if after == before {
+		t.Fatalf("a mutated node returned the SAME cached program: the edit " +
+			"never took effect, and a tightened rule would go on authorizing")
+	}
+	if after.Hash() == before.Hash() {
+		t.Fatalf("a mutated node must render to a different canonical form and " +
+			"therefore a different cache key")
+	}
+	if got := after.Source(); !strings.Contains(got, `"platinum"`) {
+		t.Fatalf("source after = %q, want the edited literal", got)
+	}
+	if strings.Contains(after.Source(), `"gold"`) {
+		t.Fatalf("source after = %q, still carries the pre-edit literal", after.Source())
 	}
 }

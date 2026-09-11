@@ -178,7 +178,8 @@ func nowProbeEngine(t *testing.T, record func(time.Time), opts ...Option) (*Engi
 
 	fetcher := fakeFetcher{"account:acme/document:1": {"classification": "public"}}
 	eng := NewEngine(MapSource{"probe": {Name: "probe", AST: ast}}, fetcher, opts...)
-	eng.cache.put(&Compiled{program: probe.program, source: src, hash: hashSource(src)})
+	probeKey := hashSource(src)
+	eng.cache.put(&Compiled{program: probe.program, source: src, key: probeKey, hash: hexHash(probeKey)})
 	return eng, identity.MustParse("account:acme/document:1")
 }
 

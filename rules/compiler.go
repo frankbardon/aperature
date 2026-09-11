@@ -101,7 +101,11 @@ func (in Input) env(notes *NoteCollector) evalEnv {
 type Compiled struct {
 	program *vm.Program
 	source  string
-	hash    string
+	// key is the cache key: the raw sha256 of source. An array, not its hex
+	// string, because a lookup runs on EVERY evaluation and a [32]byte is
+	// directly map-comparable without allocating.
+	key  [32]byte
+	hash string
 }
 
 // Source returns the canonical expr-lang expression the rule rendered to.
@@ -225,7 +229,8 @@ func (c *Compiler) compileSource(src string) (*Compiled, error) {
 	if err != nil {
 		return nil, classifyCompileError(err, src)
 	}
-	return &Compiled{program: program, source: src, hash: hashSource(src)}, nil
+	key := hashSource(src)
+	return &Compiled{program: program, source: src, key: key, hash: hexHash(key)}, nil
 }
 
 // classifyCompileError maps an expr-lang compile error to an Aperture code. The
@@ -241,9 +246,16 @@ func classifyCompileError(err error, src string) error {
 
 // hashSource is the canonical-hash function the compiled-rule cache keys on: two
 // ASTs that render to the same expression share a compiled program.
-func hashSource(src string) string {
-	sum := sha256.Sum256([]byte(src))
-	return hex.EncodeToString(sum[:])
+func hashSource(src string) [32]byte {
+	return sha256.Sum256([]byte(src))
+}
+
+// hexHash renders a cache key for DISPLAY — Compiled.Hash's exported string
+// form. It is computed once per compilation, never on a cache lookup: hex
+// encoding a digest allocates, and a lookup happens on every evaluation while a
+// compilation happens once per distinct rule.
+func hexHash(key [32]byte) string {
+	return hex.EncodeToString(key[:])
 }
 
 // Names of the backing functions the collection operators render to. They are
