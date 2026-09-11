@@ -58,7 +58,15 @@ purely through grants are unaffected.
 ## Enumerate is bounded
 
 Enumerate is the most cache-sensitive op. It is deliberately bounded and never
-enumerates unboundedly:
+enumerates unboundedly.
+
+The bound is not a tuning knob. Every candidate on the way to the result costs a
+full deny-overrides evaluation — a `Check`'s worth of work each — and the bound
+is what caps both how many are gathered per grant and how many are returned. It
+governs **how much work a single decision can do**, so raising it raises what one
+request may ask the process to spend, not merely how long a list it may print.
+
+The algorithm:
 
 - Candidates come from each ALLOW grant's covered objects — a scope resolver's
   bounded `Members` (implicit/exclusive enumerate "all of type" through the
@@ -77,54 +85,96 @@ enumerates unboundedly:
 - Each candidate is then run through the SAME deny-overrides/specificity
   decision as Check, so a candidate carved out by a more-specific or
   equal-specificity deny is dropped. A denied object is **never** returned.
-- The result is capped by `Limit`, and each resolver's `Members` is itself
-  bounded. Output order is deterministic (sorted by canonical id).
+- The result is capped by `Limit`, itself bounded by the engine's configured
+  ceiling, and each resolver's `Members` gathers against that **same** number.
+  Output order is deterministic (sorted by canonical id).
 
 ### The bound is configured, not compiled in
 
-`engine.WithEnumerateLimit(n int)` sets the ceiling. A request `Limit <= 0`
-receives it; a larger request `Limit` is clamped **down** to it. An engine built
-without the option uses `engine.DefaultEnumerateLimit` (1000), which is the
-default and not the ceiling.
+`engine.WithEnumerateLimit(n int)` sets the ceiling:
 
-A non-positive `n` is **normalised to the default**, never stored. An `Option`
-cannot report an error, and a zero bound would turn every enumeration into an
-empty result that reads exactly like "no access" — so a misconfiguration degrades
-to the documented default. Parse and validate an operator-supplied value at the
-surface that reads it, where an `APERTURE_CONFIG_INVALID` can still reach them.
+- a request `Limit <= 0` receives the configured bound;
+- a larger request `Limit` is clamped **down** to it;
+- a request `Limit` at or below it is honoured as asked.
 
-The CLI is one such surface: `--enumerate-limit` / `APERTURE_ENUMERATE_LIMIT`
-(flag > env > default). It is declared as a `ucli.StringFlag` and parsed by the
-CLI on purpose — an `IntFlag` carrying the same env source lets urfave fail the
-command with its own **uncoded** parse error before the action runs, so a
-mistyped value would report something other than `APERTURE_CONFIG_INVALID`.
+An engine built without the option uses `engine.DefaultEnumerateLimit`, which is
+**1000 and unchanged** — the DEFAULT, not the ceiling. An engine that configures
+nothing enumerates exactly as it always did.
 
-**The bound belongs to the process, not to `serve`.** Every command that decides
-carries the same flag — `serve`, `check`, `enumerate`, `identifiers`, `explain`,
-`mcp` — and the option is applied in the SHARED half of `internal/cli`'s
-`buildDecisionStack`, never as one of the per-command `engOpts`. That split
-exists so `serve` can add `--enforce-membership` without forcing it on the
-one-shot commands, and it is exactly the wrong place for a bound: a deployment
-configured to 1500 whose `aperture enumerate` still answered 1000 would be two
-surfaces of one binary disagreeing about the same question, with nothing in
-either answer saying so.
-
-The CLI refuses `0` and every negative as well as `banana`, with the same code
-and before the store is opened. That is not a contradiction of the normalisation
-above, it is the point of it: the library absorbs a non-positive number because
-an `Option` cannot report one, and the boundary rejects it because a human who
-typed `-5` and got `1000` has no way to find out. **Lenient normalisation in the
-library, input validation at the surface.** A surface that passes an operator's
-number straight through inherits the silent fallback.
-
-`WithScopeResolution` stamps the configured bound into the `ScopeDeps` the engine
-keeps, as `Deps.MaxMembers`, whichever order the two options are passed in. The
-stamp is **unconditional** and overwrites a `MaxMembers` a caller-built
-`ScopeDeps` literal carried — `internal/cli` builds exactly such a literal. One
+**One configured value, three layers.** `New` stamps the effective bound into the
+`ScopeDeps` the engine keeps, as `Deps.MaxMembers`, *after* every option has run,
+so the two options may be passed in either order. The stamp is **unconditional**
+and overwrites a `MaxMembers` a caller-built `ScopeDeps` literal carried —
+`internal/cli` builds exactly such a literal. From there the same number reaches
+the provider on the limit `scope.ObjectLister.List` already takes, so the value
+flows engine clamp → scope gather → provider list without a new seam. One
 enumeration must not be governed by two numbers: a member gather bounded lower
 than the engine's clamp truncates the set before the engine ever sees it, and
-nothing in the result says so. Configure the bound on the engine; the deps
+nothing in the result says so. Configure the bound on the engine; the rest
 inherit it.
+
+**It caps an id-list as much as a lister-backed gather.** An inclusive grant
+naming 5,000 ids yields the first 1,000 of them under the default — the
+`Members` id-list walk stops at the bound before it ever considers the rule half.
+A *literal-strategy* grant is the one place the bound is applied later rather
+than earlier: a concrete identity is a single member and an explicit `{a,b,c}`
+id-set expands in full, with the engine's own cap truncating on the way out.
+
+**The engine is where the cap lives.** `provider.Registry.List` honours a
+positive limit **verbatim, however large** — `provider.DefaultListLimit` (1000)
+is only what a non-positive limit means — and
+`provider.AttributeRegistry.Enumerate` is deliberately **uncapped**, because it
+is a system-tier directory read protected by the authority it demands rather than
+by a number. Neither is a hole: every *network* surface reaches enumeration
+through the engine's clamp, and a direct Go embedder calling
+`reg.List(ctx, t, pat, 1_000_000)` is asking deliberately and gets what it asked
+for.
+
+### Lenient in the library, strict at the surface
+
+A non-positive `n` is **normalised to `DefaultEnumerateLimit`**, never stored. An
+`Option` cannot report an error, and a zero bound would turn every enumeration
+into an empty result that reads exactly like "no access" — so a misconfiguration
+degrades to the documented default instead of fabricating a denial. An embedder
+handing over a computed `0` gets a sane engine.
+
+A human who typed `-5` is a different case, and the CLI refuses it: `0`, every
+negative, and `banana` all fail with `APERTURE_CONFIG_INVALID` naming the setting
+and the offending value, **before the store is opened** (`serve` re-parses the
+value up front for exactly that reason, rather than leaving a database file
+behind on a refused configuration). Being served `1000` while believing the bound
+is `-5` is the precise invisibility the flag exists to remove.
+
+**Lenient normalisation in the library, input validation at the surface.** Both
+are right, and a surface that passes an operator's number straight through
+inherits the silent fallback instead. The two halves are also deliberately
+divergent with **no test binding them together** — if the engine ever stopped
+normalising, the CLI's refusal would still compile and still pass — which is why
+`CLAUDE.md`'s Update-Demand table names every statement of the divergence.
+
+### The bound belongs to the process, not to `serve`
+
+The CLI spells it `--enumerate-limit` / `APERTURE_ENUMERATE_LIMIT`, precedence
+flag > env > default. It is declared as a `ucli.StringFlag` and parsed by
+Aperture on purpose: a `ucli.IntFlag` carrying the same env source lets urfave
+fail the command with its own **uncoded** parse error before the action runs, so
+`APERTURE_ENUMERATE_LIMIT=banana` would report something other than
+`APERTURE_CONFIG_INVALID`. A `StringFlag` has no parse to fail, so the bad value
+reaches Aperture's own validation — and keeping the env source (which the
+`--manage-*` bools could not) leaves precedence as urfave's native one rather
+than a hand-rolled order that could drift.
+
+Every command that decides and can enumerate carries the same flag — `serve`,
+`check`, `enumerate`, `identifiers`, `explain`, `mcp` — and the option is applied
+in the SHARED half of `internal/cli`'s `buildDecisionStack`, never as one of the
+per-command `engOpts`. That split exists so `serve` can add
+`--enforce-membership` without forcing it on the one-shot commands, and it is
+exactly the wrong place for a bound: a deployment configured to 1500 whose
+`aperture enumerate` still answered 1000 would be two surfaces of one binary
+disagreeing about the same question, with nothing in either answer saying so.
+(`aperture attributes` builds the same stack but reads attribute *directories*,
+which this bound never governs, so it carries no flag that would change nothing
+it prints.)
 
 ### A result on the bound is a warning, not a flag
 
@@ -150,10 +200,10 @@ and grows no truncation flag, so a caller still cannot distinguish a truncated
 result from a complete one. That is the accepted cost of not breaking the return
 shape — an operator who sees the warning re-asks with a higher bound.
 
-The engine is the **only** place it is raised. One bound flows all the way down
-(the engine clamp, `scope.Deps.MaxMembers`, the provider list), so a starve in
-the scope or provider layer surfaces here as a result sitting on the bound;
-`scope` and `provider` carry no logger and are not given one.
+The engine is the **only** place it is raised, and it can afford to be: because
+one number governs all three layers, a starve in the scope gather or the provider
+list surfaces here as a result sitting on the bound. `scope` and `provider` carry
+no logger and are not given one.
 
 ## Enumerate's metadata filter
 

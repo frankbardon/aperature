@@ -38,7 +38,12 @@ Full surface:
   `EnumerateBatch`, `ExplainBatch`. Fail-closed (an operational error folds to a
   deny; only input-validation is returned). `EnumerateQuery` additionally carries
   the OPTIONAL metadata filter — see [the enumerate metadata
-  filter](#the-enumerate-metadata-filter).
+  filter](#the-enumerate-metadata-filter) — and a `Limit` that **every** surface
+  passes through unexamined: the process-wide enumeration bound
+  (`--enumerate-limit` / `APERTURE_ENUMERATE_LIMIT`, default 1000) is applied by
+  the engine, so a `limit` above it is clamped **down** with nothing in the
+  response saying so. No surface owns or restates that policy; see
+  `skills/decision-api.md`.
 - **Audit query** (read): `QueryAudit(AuditFilter)` returns the append-only audit
   events matching the filter (actor, account, event type, outcome, since/until,
   limit), newest-first, each as canonical JSON. It is a GATED read — a
