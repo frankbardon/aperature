@@ -240,7 +240,16 @@ Gated, NOT in `make test` (a loaded runner would flake them):
 
 - `APERTURE_BENCH_ASSERT=1 go test -run TestCheckNFR ./bench/` — cached `Check`
   p99 < 1ms and ≥ 10k checks/sec, including the collection and nested-access
-  fixtures.
+  fixtures. Every case in the gate is NAMED `TestCheckNFR*` on purpose, because
+  `-run` is an unanchored regexp and this is the only invocation anyone runs; a
+  case reachable only by a second command will not be run. One of them,
+  `TestCheckNFREnumerateBound`, asserts a **ratio** rather than a wall clock — a
+  rule-backed `Enumerate` at a bound raised through `engine.WithEnumerateLimit`
+  must cost no more than 1.5× the default bound's cost **per candidate** — so
+  that it catches a super-linear term in the fan-out without flaking on a loaded
+  runner. Do not convert it to an absolute ceiling: a bound-sized enumeration is
+  milliseconds by design, and the justification for the number lives beside it in
+  `bench/enumerate_test.go`.
 - `node internal/server/static/js/rules-serializer.test.js` — CI is node-free, so
   this is a manual development aid; the Go contract tests above are the real gate.
 - `APERTURE_PG_INTEGRATION=1 APERTURE_PG_DSN=<dsn> go test -run TestPostgresIntegration ./seed/`

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/frankbardon/aperture/engine"
 	"github.com/frankbardon/aperture/identity"
@@ -45,12 +47,17 @@ import (
 // about to raise it in production should be able to read the cost off a
 // benchmark rather than estimate it.
 //
-// These benchmarks are INFORMATIONAL. They are deliberately NOT part of
-// TestCheckNFR's asserted gate: that gate is about the cached single-Check NFR
-// (p99 < 1 ms, >= 10k checks/sec), and rule-backed enumeration has no agreed
-// threshold to assert against. The number they exist to publish is the per-
-// candidate cost, so a future change that regresses it has something to regress
-// against.
+// These benchmarks are INFORMATIONAL: they publish the absolute per-candidate
+// cost, so a future change that regresses it has something to regress against.
+// They are not held to the cached-Check thresholds (p99 < 1 ms, >= 10k
+// checks/sec) — a bound-sized rule-backed enumeration is milliseconds by design.
+//
+// What IS asserted, and gated, is the SHAPE: TestCheckNFREnumerateBound at the
+// bottom of this file measures an enumeration at a raised bound against the same
+// enumeration at the default bound and requires the per-candidate cost to stay
+// flat, which is the invariant these rows demonstrate and the one a raised bound
+// can break. The threshold is a ratio derived from the table above, and the
+// reasoning is written where it is set.
 //
 // MEASURED (Apple M1 Max, 10 cores, go1.26.5 darwin/arm64,
 // `go test -bench BenchmarkEnumerateRuleBacked -benchmem -benchtime=2s -count=3`,
@@ -532,4 +539,237 @@ func enumerateIDs(t *testing.T, m enumerateModel) []string {
 		}
 	}
 	return ids
+}
+
+// enumerateBoundRatioCeiling is this gate's one threshold, and it is a RATIO
+// rather than a wall clock: the per-candidate cost of an enumeration at a
+// RAISED bound, divided by the per-candidate cost of the same enumeration at the
+// engine's default bound, must not exceed it.
+//
+// WHY A RATIO AT ALL. The suite's existing thresholds (p99Ceiling = 1 ms,
+// throughputMin = 10 000/sec) are about a cached single Check. Neither transfers
+// here: a 2 000-id rule-backed enumeration is ~11.6 ms BY DESIGN — it is ~4 000
+// rule evaluations plus 2 000 decisions — so a 1 ms ceiling could never pass, and
+// any absolute ceiling large enough to pass would have to be pinned to one
+// machine on one day. E3-S1 measured exactly that hazard: the whole committed
+// table, including rows this effort never touched, sits ~40% above the figures
+// first published, and the candidates-4000/bound-2000 row alone ranged
+// 11.21–16.31 ms (1.45x) across a single -count=3 run. An absolute ceiling on an
+// 11.6 ms operation measured on a machine that swings 1.45x is the design most
+// likely to flake, and re-tuning it would become a recurring chore that
+// eventually gets loosened into a tautology.
+//
+// A ratio divides machine speed and baseline drift out entirely, because both
+// arms are measured on the same machine in the same second (see the interleaving
+// below). What is left is the thing the raised bound can actually break.
+//
+// WHY THIS RATIO. ns/candidate flat across bounds is the strongest invariant in
+// E3-S1's data — it is what "the cost is linear in the result size" means. From
+// that table (medians of 3, Apple M1 Max, go1.26.5 darwin/arm64), with the
+// 1 000-candidate unconfigured row at 6 318 ns/candidate as the denominator:
+//
+//	1 000 candidates @ bound 2 000 (headroom)  5 744 / 6 318 = 0.91
+//	2 000 candidates @ bound 2 000 (at bound)  5 819 / 6 318 = 0.92
+//	4 000 candidates @ bound 2 000 (past it)   6 003 / 6 318 = 0.95
+//
+// and the widest spread of ns/candidate between ANY two rows of the sweep, across
+// three orders of magnitude of population and both bounds, is 5 472..6 318 =
+// 1.15x. So 1.5 sits 1.63x above the worst ratio actually measured and 1.3x above
+// the widest spread the sweep has ever produced.
+//
+// WHAT IT CATCHES. A super-linear term in the enumeration fan-out — the one
+// regression raising the bound can introduce that nothing else in the suite would
+// see. A quadratic member gather doubles the per-candidate cost when the bound
+// doubles (ratio 2.0) and fails here; anything worse fails harder. So does a
+// bound-sized pre-allocation, a per-candidate rescan of the member set, or a
+// cache keyed such that it stops hitting once the member set grows — all of which
+// present as ns/candidate rising with the bound. That was verified rather than
+// argued: a linear rescan of the accumulated member set injected into
+// scope.enumerateOfType (a textbook quadratic gather) measures 1.86x here and
+// fails, while the headroom arm stays at 0.99x through the same injection — so the
+// ratio really does track the bound and not the fixture. The headroom arm
+// catches the shape specific to THIS effort: configuring a bound a deployment
+// never reaches must cost nothing, and a ceiling-sized allocation on the
+// configured path would show up there and nowhere else.
+//
+// WHAT IT DELIBERATELY DOES NOT CATCH: a uniform slowdown that hits both arms
+// equally — by construction, that divides out. The ~40% baseline drift above is
+// precisely that shape, and it is a BenchmarkEnumerateRuleBacked question, not a
+// gate question; asserting it would make the gate a machine detector. The
+// decisions/sec floor below is what keeps a catastrophic uniform regression from
+// passing unnoticed, and it reuses the committed throughputMin rather than
+// inventing a number.
+//
+// WHICH RISK THIS FAVOURS: **not flaking on a loaded machine**, explicitly and by
+// a wide margin. 1.5 is 63% above the worst ratio in E3-S1's table, and the
+// measurement (interleaved arms, minimum over rounds) is built to suppress
+// one-sided load noise rather than average it in. Measured: across 17 runs on an
+// Apple M1 Max — idle, and under 12 then 16 competing CPU burners at load
+// averages up to 24 — both ratios stayed within **0.94x..1.10x**. The absolute
+// per-id cost moved ~15% under that load; the ratio did not. For contrast, the
+// same two populations read straight off BenchmarkEnumerateRuleBacked during that
+// load (no interleaving, no min-of-rounds) differed by 1.72x — which is what the
+// measurement design, not the ceiling, is buying. The cost of that choice, stated
+// plainly: a regression that makes the raised bound between 1.0x and 1.5x dearer
+// PER CANDIDATE than the default bound passes here, and has to be caught by
+// reading BenchmarkEnumerateRuleBacked's committed table instead. A gate that
+// cried wolf would be
+// disabled within a month, and a disabled gate catches nothing at any threshold.
+const enumerateBoundRatioCeiling = 1.5
+
+// enumerateNFRRounds is how many interleaved measurement rounds the gate takes
+// per arm, and enumerateNFRRunsPerRound how many enumerations each round times.
+//
+// The arms are measured ROUND-ROBIN, not one after the other, so a load spike
+// part-way through the test lands on every arm rather than on whichever one
+// happened to be running — an ordering artefact is the easiest way to turn a
+// ratio assertion into a coin flip. Each arm then keeps its MINIMUM round, not
+// its mean: contention on a shared runner is one-sided (it only ever makes a run
+// slower), so the fastest round is the closest estimate of the machinery's real
+// cost and averaging would fold the noise straight into the ratio.
+//
+// Three enumerations per round is already ~6 000 rule evaluations at the default
+// bound and ~12 000 at the raised one, so a round is a large enough unit to time;
+// seven rounds over the three arms is ~0.5 s end to end, which keeps this a gate
+// rather than a second benchmark suite.
+const (
+	enumerateNFRRounds       = 7
+	enumerateNFRRunsPerRound = 3
+)
+
+// enumerateNFRArm is one measured leg of the ratio: a fixture, and the best
+// per-candidate cost observed for it.
+type enumerateNFRArm struct {
+	label string
+	m     enumerateModel
+	// best is the lowest per-returned-id cost seen across the rounds; zero until
+	// the first round has run.
+	best time.Duration
+}
+
+// TestCheckNFREnumerateBound is the raised-bound half of the hard NFR gate: it
+// asserts that raising the enumeration bound scales the cost LINEARLY, by
+// measuring an enumeration at a bound above the default and comparing its
+// per-candidate cost against the same enumeration at the default bound.
+//
+// It is gated identically to the rest (APERTURE_BENCH_ASSERT=1, skipped under
+// -short), and its NAME deliberately contains "TestCheckNFR" so the one
+// documented invocation
+//
+//	APERTURE_BENCH_ASSERT=1 go test -run TestCheckNFR ./bench/
+//
+// — whose -run pattern is an unanchored regexp — covers it with no command
+// change. A gate case reachable only by a second, undocumented command is a gate
+// case that will not be run.
+//
+// Three arms, and the third is the one the story exists for:
+//
+//	default-bound   1 000 candidates, engine configured with NO bound
+//	headroom        1 000 candidates at a configured bound of 2 000 (never reached)
+//	at-the-bound    2 000 candidates at a configured bound of 2 000 (reached)
+//
+// The at-the-bound arm returns MORE ids than engine.DefaultEnumerateLimit, and
+// that is asserted before any timing runs. Without it this would be the
+// fails-by-passing shape CLAUDE.md names for stampedEntities(): a gate that
+// measures the raised bound only in its variable names, and would keep passing if
+// the bound silently fell back to the default anywhere between the engine clamp,
+// the scope member gather and the provider list.
+func TestCheckNFREnumerateBound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping NFR wall-clock assertion under -short")
+	}
+	if os.Getenv("APERTURE_BENCH_ASSERT") != "1" {
+		t.Skip("set APERTURE_BENCH_ASSERT=1 to run the hard NFR latency/throughput gate")
+	}
+
+	base := &enumerateNFRArm{
+		label: "default-bound",
+		m:     buildEnumerateModel(t, scope.DefaultMaxMembers, 0),
+	}
+	headroom := &enumerateNFRArm{
+		label: "raised-bound/headroom",
+		m:     buildEnumerateModel(t, scope.DefaultMaxMembers, enumerateRaisedBound),
+	}
+	atBound := &enumerateNFRArm{
+		label: "raised-bound/at-the-bound",
+		m:     buildEnumerateModel(t, enumerateRaisedBound, enumerateRaisedBound),
+	}
+	arms := []*enumerateNFRArm{base, headroom, atBound}
+
+	// Warm the parsed-pattern, compiled-rule and provider-metadata caches so the
+	// measured window is the steady state, and assert each arm returns the id
+	// count its fixture predicts before anything is timed.
+	for _, a := range arms {
+		warmEnumerate(t, a.m)
+	}
+
+	// The gate is only about the raised bound if the raised bound actually
+	// produced a result the default one could not. Structural, so it cannot flake.
+	if atBound.m.want <= engine.DefaultEnumerateLimit {
+		t.Fatalf("%s: fixture returns %d ids at a configured bound of %d, which does not exceed "+
+			"engine.DefaultEnumerateLimit %d — this gate would be measuring the default bound "+
+			"under a raised-bound name", atBound.label, atBound.m.want, enumerateRaisedBound,
+			engine.DefaultEnumerateLimit)
+	}
+
+	ctx := context.Background()
+	for round := 0; round < enumerateNFRRounds; round++ {
+		for _, a := range arms {
+			a.observe(t, ctx)
+		}
+	}
+
+	t.Logf("%s: %v per returned id (%d ids/enumeration, best of %d rounds x %d enumerations)",
+		base.label, base.best, base.m.want, enumerateNFRRounds, enumerateNFRRunsPerRound)
+
+	for _, a := range []*enumerateNFRArm{headroom, atBound} {
+		ratio := float64(a.best) / float64(base.best)
+		t.Logf("%s: %v per returned id over %d ids = %.2fx the default bound's per-id cost "+
+			"(ceiling %.2fx)", a.label, a.best, a.m.want, ratio, enumerateBoundRatioCeiling)
+		if ratio > enumerateBoundRatioCeiling {
+			t.Errorf("%s: %v per returned id is %.2fx the default bound's %v, exceeding the %.2fx "+
+				"ceiling. Raising the enumeration bound is supposed to cost PROPORTIONALLY more, "+
+				"not more per candidate: a rising per-candidate cost is a super-linear term in the "+
+				"fan-out (a quadratic member gather, a bound-sized allocation, or a cache that "+
+				"stops hitting once the member set grows). See the ns/candidate column of "+
+				"BenchmarkEnumerateRuleBacked, which is flat across both bounds",
+				a.label, a.best, ratio, base.best, enumerateBoundRatioCeiling)
+		}
+
+		// The ratio's blind spot, covered with a threshold this suite already
+		// committed to rather than a new guess. An Enumerate makes one authorization
+		// decision per returned id, so decisions/sec is the same unit as
+		// throughputMin, and a uniform slowdown — which divides out of the ratio by
+		// construction — cannot get past both. The denominator undercounts the real
+		// work (the member gather evaluates the rule once more per LISTED candidate
+		// and is not charged), so the measured rate is conservative in the direction
+		// that makes the assertion honest.
+		rate := float64(time.Second) / float64(a.best)
+		t.Logf("%s: %.0f decisions/sec (floor %.0f)", a.label, rate, throughputMin)
+		if rate < throughputMin {
+			t.Errorf("%s: %.0f decisions/sec is below the NFR floor %.0f", a.label, rate, throughputMin)
+		}
+	}
+}
+
+// observe times one round of enumerations for the arm and keeps it if it is the
+// cheapest per returned id seen so far. Every round re-asserts the id count, so
+// an arm that quietly stopped returning its bound's worth of ids fails here
+// rather than reporting a flattering rate over a shorter result.
+func (a *enumerateNFRArm) observe(t *testing.T, ctx context.Context) {
+	t.Helper()
+	start := time.Now()
+	for i := 0; i < enumerateNFRRunsPerRound; i++ {
+		ids, err := a.m.svc.Enumerate(ctx, a.m.query)
+		if err != nil {
+			t.Fatalf("%s: Enumerate: %v", a.label, err)
+		}
+		if len(ids) != a.m.want {
+			t.Fatalf("%s: Enumerate returned %d ids, want %d", a.label, len(ids), a.m.want)
+		}
+	}
+	per := time.Since(start) / time.Duration(enumerateNFRRunsPerRound*a.m.want)
+	if a.best == 0 || per < a.best {
+		a.best = per
+	}
 }

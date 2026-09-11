@@ -181,6 +181,11 @@ samples rather than 100 000/200 000 because the gate multiplies out over every
 variant × the audit axis (26 combinations today, ~105 s end to end); the
 thresholds are *rates*, so the smaller sample does not weaken them.
 
+`TestCheckNFREnumerateBound` is the third case that invocation picks up, and the
+one threshold in the suite that is **not** a wall clock: it holds a rule-backed
+`Enumerate` at a **raised** bound to a *ratio* against the same enumeration at the
+default bound. See [the raised-bound gate](#the-raised-bound-gate-testchecknfrenumeratebound).
+
 ### The allocation guard (E5-S2)
 
 `provider` hands a cached `Metadata` out **by reference** and documents the
@@ -514,10 +519,92 @@ to land exactly on its bound, which is precisely when the engine emits its
 log handler. The warning itself is asserted in
 `engine/enumerate_bound_warning_test.go`, where it belongs.
 
-These are **informational**. They are deliberately outside `TestCheckNFR`'s
-asserted gate, which is about the cached single-`Check` NFR; rule-backed
-enumeration has no agreed threshold. The numbers are published so a future change
-that regresses them has something to regress against.
+The absolute figures above are **informational** — they exist so a future change
+that regresses them has something to regress against. What is *asserted* is the
+**shape**, in `TestCheckNFREnumerateBound`.
+
+#### The raised-bound gate (`TestCheckNFREnumerateBound`)
+
+Raising the bound is an operator-facing knob on the worst case, so a regression
+in the enumeration fan-out should be caught by the suite rather than discovered
+in production. The gate rides the same invocation as everything else — its name
+contains `TestCheckNFR`, and `-run` is an unanchored regexp:
+
+```sh
+APERTURE_BENCH_ASSERT=1 go test -run TestCheckNFR ./bench/
+```
+
+Three arms, measured **round-robin** (so a load spike lands on all three rather
+than on whichever happened to be running), each keeping its **minimum** round
+(contention on a shared runner is one-sided, so the fastest round is the closest
+estimate of the machinery's real cost):
+
+| Arm | Candidates | Configured bound | ids |
+|---|---:|---:|---:|
+| `default-bound` | 1 000 | none | 1 000 |
+| `raised-bound/headroom` | 1 000 | 2 000 | 1 000 |
+| `raised-bound/at-the-bound` | 2 000 | 2 000 | **2 000** |
+
+The at-the-bound arm returns **more ids than `engine.DefaultEnumerateLimit`**, and
+that is asserted structurally *before* anything is timed — otherwise this would be
+the fails-by-passing shape `CLAUDE.md` names for `stampedEntities()`: a gate that
+measures the raised bound only in its variable names.
+
+**The threshold is a ratio, not a wall clock**, and that is the whole design.
+A 2 000-id rule-backed enumeration is ~11.6 ms *by design*, so neither `p99Ceiling`
+(1 ms) nor a re-tuned absolute number transfers: the table above already sits ~40 %
+above its first-committed figures, and the `candidates-4000/bound-2000` row alone
+ranged 11.21–16.31 ms (1.45×) inside a single `-count=3` run. A ratio divides
+machine speed and baseline drift out entirely, because both arms are measured on
+the same machine in the same second.
+
+The ratio asserted is **per-candidate cost at the raised bound ÷ per-candidate cost
+at the default bound ≤ 1.5×**, derived from the table above (denominator: the
+1 000-candidate unconfigured row at 6 318 ns/candidate):
+
+| Row | ns/candidate | ratio |
+|---|---:|---:|
+| 1 000 @ bound 2 000 (headroom) | 5 744 | 0.91 |
+| 2 000 @ bound 2 000 (at the bound) | 5 819 | 0.92 |
+| 4 000 @ bound 2 000 (past it) | 6 003 | 0.95 |
+
+and the widest spread of `ns/candidate` between *any* two rows of the whole sweep
+— three orders of magnitude of population, both bounds — is 5 472…6 318 = **1.15×**.
+So 1.5 sits 1.63× above the worst ratio ever measured and 1.3× above the widest
+spread the sweep has produced.
+
+**What it catches:** a super-linear term in the fan-out — a quadratic member
+gather, a bound-sized pre-allocation, a per-candidate rescan, or a cache that
+stops hitting once the member set grows. All present as `ns/candidate` rising with
+the bound. A quadratic member gather injected into `scope.enumerateOfType`
+measures **1.86×** and fails, while the headroom arm correctly stays at 0.99× —
+the ratio really is measuring the bound and not the fixture. The headroom arm
+catches the shape specific to the configurable bound: configuring a ceiling a
+deployment never reaches must cost nothing.
+
+**What it deliberately does not catch:** a uniform slowdown hitting both arms
+equally — by construction, that divides out. The ~40 % drift above is exactly that
+shape, and it is a benchmark question, not a gate question. The blind spot is
+covered by a second assertion that introduces **no new constant**: an `Enumerate`
+makes one authorization decision per returned id, so the arms are additionally
+held to the committed `throughputMin` as decisions/sec (they measure ~180–230 k,
+18–23× the floor).
+
+**Which risk the threshold favours: not flaking on a loaded machine**, explicitly
+and by a wide margin. Observed on an Apple M1 Max across **17 runs** — idle, and
+under 12 then 16 competing CPU-burner processes at load averages up to 24 — both
+ratios stayed within **0.94×–1.10×** against the 1.5× ceiling. The absolute per-id
+cost moved ~15 % under that load; the ratio did not. For contrast, the same two
+populations read straight off `BenchmarkEnumerateRuleBacked` during that load (no
+interleaving, no min-of-rounds) differed by **1.72×** — which is what the
+*measurement design*, rather than the ceiling, is buying.
+
+The cost of the choice is stated plainly: a regression making the raised
+bound 1.0–1.5× dearer *per candidate* than the default passes here and must be
+caught by reading the table above. A gate that cried wolf would be disabled within
+a month, and a disabled gate catches nothing at any threshold.
+
+The whole gate runs in **~0.5 s**.
 
 The counters in the compiled-rule cache are `sync/atomic` for this reason. The
 hit path used to take the cache's **write** lock purely to bump `hits`, which
