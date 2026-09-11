@@ -100,6 +100,14 @@ same env source lets urfave fail the command with its own **uncoded** parse
 error before the action runs, so a mistyped value would report something other
 than `APERTURE_CONFIG_INVALID`.
 
+The CLI refuses `0` and every negative as well as `banana`, with the same code
+and before the store is opened. That is not a contradiction of the normalisation
+above, it is the point of it: the library absorbs a non-positive number because
+an `Option` cannot report one, and the boundary rejects it because a human who
+typed `-5` and got `1000` has no way to find out. **Lenient normalisation in the
+library, input validation at the surface.** A surface that passes an operator's
+number straight through inherits the silent fallback.
+
 `WithScopeResolution` stamps the configured bound into the `ScopeDeps` the engine
 keeps, as `Deps.MaxMembers`, whichever order the two options are passed in. The
 stamp is **unconditional** and overwrites a `MaxMembers` a caller-built

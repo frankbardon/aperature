@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -275,6 +276,79 @@ func TestEnumerateLimit_MalformedIsConfigError(t *testing.T) {
 			t.Fatalf("code = %s, want %s (err=%v)", got, aerr.APERTURE_CONFIG_INVALID, err)
 		}
 	})
+}
+
+// TestEnumerateLimit_NonPositiveIsConfigError asserts a value that parses but
+// cannot be a ceiling — zero, or any negative — is refused at the boundary from
+// BOTH sources, rather than reaching engine.WithEnumerateLimit and being
+// normalised away.
+//
+// This is the half a type check cannot catch: -5 is a perfectly good int, so the
+// StringFlag/IntFlag argument buys nothing here. The hazard is the silent
+// fallback — engine.WithEnumerateLimit deliberately normalises a non-positive
+// bound to DefaultEnumerateLimit (correct for a Go embedder passing a computed
+// number; see engine.TestEnumerateLimit* for the library side), which would
+// leave an operator who typed -5 being served 1000 while believing otherwise.
+// Lenient normalisation in the library, input validation at the boundary. Do not
+// "fix" this by changing the engine.
+func TestEnumerateLimit_NonPositiveIsConfigError(t *testing.T) {
+	for _, raw := range []string{"0", "-1", "-5", "-1500"} {
+		t.Run("from the environment/"+raw, func(t *testing.T) {
+			t.Setenv(envEnumerateLimit, raw)
+			opts, err := resolveEngineOptions(t)
+			assertRejectedEnumerateLimit(t, opts, err, raw)
+		})
+
+		t.Run("from the flag/"+raw, func(t *testing.T) {
+			// Empty, not unset: the flag must be what fails, not a leftover variable.
+			t.Setenv(envEnumerateLimit, "")
+			opts, err := resolveEngineOptions(t, "--enumerate-limit="+raw)
+			assertRejectedEnumerateLimit(t, opts, err, raw)
+		})
+	}
+}
+
+// assertRejectedEnumerateLimit is the shared claim behind every refusal of a
+// configured bound: the boot fails with one APERTURE_CONFIG_INVALID naming both
+// spellings of the setting and the value it rejected, and NO engine option is
+// produced — an option carrying a value the engine would normalise is exactly
+// the silent fallback these tests exist to forbid.
+func assertRejectedEnumerateLimit(t *testing.T, opts []engine.Option, err error, raw string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("--enumerate-limit=%s was accepted; it must fail the boot", raw)
+	}
+	if got := aerr.CodeOf(err); got != aerr.APERTURE_CONFIG_INVALID {
+		t.Fatalf("code = %s, want %s (err=%v)", got, aerr.APERTURE_CONFIG_INVALID, err)
+	}
+	if d := codedDepth(err); d != 1 {
+		t.Errorf("coded chain depth = %d, want exactly 1 (err=%v)", d, err)
+	}
+	msg := err.Error()
+	for _, want := range []string{raw, "--enumerate-limit", envEnumerateLimit} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the error does not name %q: %v", want, err)
+		}
+	}
+	if len(opts) != 0 {
+		t.Errorf("a refused bound still produced %d engine option(s); the value must never reach the engine", len(opts))
+	}
+}
+
+// codedDepth counts the Aperture-coded errors in a chain. A same-code re-stamp
+// is invisible to CodeOf, so depth is what proves the refusal is constructed
+// once rather than wrapped on the way out.
+func codedDepth(err error) int {
+	depth := 0
+	for err != nil {
+		var ce *aerr.CodedError
+		if !errors.As(err, &ce) {
+			break
+		}
+		depth++
+		err = errors.Unwrap(ce)
+	}
+	return depth
 }
 
 // TestServeFlagsNameTheirEnvVars asserts each --manage-* flag's usage text names

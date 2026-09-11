@@ -51,9 +51,15 @@ Press `Ctrl-C` to trigger a graceful shutdown (`shutting down...`).
   APERTURE_ENUMERATE_LIMIT=1500 bin/aperture serve
   ```
 
-  A value that is not a whole number fails the boot with
+  A value that is not a whole number **greater than zero** fails the boot with
   `APERTURE_CONFIG_INVALID` naming the setting and the value it rejected —
-  before the store is opened — rather than quietly serving the default.
+  before the store is opened — rather than quietly serving the default. That
+  covers `banana`, and it covers `0` and `-5` too: the engine's
+  `WithEnumerateLimit` normalises a non-positive bound to the default, which is
+  the right answer for a Go embedder passing a computed number and the wrong one
+  for a human who typed one. An operator who wrote `-5` would be served `1000`
+  while believing otherwise, so `serve` refuses at the boundary what the library
+  would have absorbed. To get the default, omit the setting.
 
 Under `serve`, the facade is wired with everything the other surfaces expect: the
 admin gate, delegation and impersonation mutators, the append-only audit trail,

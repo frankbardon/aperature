@@ -28,7 +28,7 @@ forces the listener closed.
 | `--seed` | *(embedded example)* | — | Path to a JSON/YAML seed model. Empty ⇒ the embedded `acme` example fixture. |
 | `--auth` | `dev` | `APERTURE_AUTH_MODE` | Authenticator adapter: `dev`, `oidc`, or `parsec`. The flag **overrides** the env var. |
 | `--enforce-membership` | off | `APERTURE_ENFORCE_MEMBERSHIP` | Deny any decision whose principal is not a member of the active account, before grants are consulted. |
-| `--enumerate-limit` | `1000` | `APERTURE_ENUMERATE_LIMIT` | Ceiling one enumeration is bounded by — the number a request with a non-positive `limit` receives, and the number a larger `limit` is clamped down to. Bounds the scope member gather too, so one value governs both. The flag **overrides** the env var; a non-numeric value fails the boot with `APERTURE_CONFIG_INVALID`. |
+| `--enumerate-limit` | `1000` | `APERTURE_ENUMERATE_LIMIT` | Ceiling one enumeration is bounded by — the number a request with a non-positive `limit` receives, and the number a larger `limit` is clamped down to. Bounds the scope member gather too, so one value governs both. The flag **overrides** the env var; a value that is not a whole number greater than zero — `banana`, `0`, `-5` — fails the boot with `APERTURE_CONFIG_INVALID` naming the setting and the value. |
 
 The generated, always-current flag table is the
 [Command-Line Reference](../reference/cli.md#aperture-serve).

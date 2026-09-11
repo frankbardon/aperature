@@ -69,7 +69,7 @@ func serveCommand() *ucli.Command {
 			},
 			&ucli.StringFlag{
 				Name:    "enumerate-limit",
-				Usage:   "maximum number of object ids one enumeration returns, and the ceiling a larger request Limit is clamped down to (default " + strconv.Itoa(engine.DefaultEnumerateLimit) + "; overrides " + envEnumerateLimit + ")",
+				Usage:   "maximum number of object ids one enumeration returns, and the ceiling a larger request Limit is clamped down to (a whole number greater than zero; default " + strconv.Itoa(engine.DefaultEnumerateLimit) + "; overrides " + envEnumerateLimit + ")",
 				Sources: ucli.EnvVars(envEnumerateLimit),
 			},
 			&ucli.BoolFlag{
@@ -159,9 +159,10 @@ func managedEntities(cmd *ucli.Command) (service.ManagedEntities, error) {
 // that does not apply to a string: an env-sourced BoolFlag also sets
 // hasBeenSet, which would make cmd.IsSet stop meaning "the operator typed this".
 //
-// This reads the value; it does not decide what the value MEANS. Clamping is the
-// engine's (engine.WithEnumerateLimit), which is why a parsed number is handed
-// over unexamined.
+// This reads the value and checks it is SAYABLE — a whole number greater than
+// zero. It does not decide what an accepted number MEANS: the clamping is the
+// engine's (engine.WithEnumerateLimit), which is why every value that survives
+// the two checks below is handed over unexamined.
 func enumerateLimit(cmd *ucli.Command) (int, bool, error) {
 	raw := strings.TrimSpace(cmd.String("enumerate-limit"))
 	if raw == "" {
@@ -169,20 +170,42 @@ func enumerateLimit(cmd *ucli.Command) (int, bool, error) {
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil {
-		// The setting and the rejected value go in the MESSAGE, not only in the
-		// context map: nothing on the CLI path renders a CodedError's Context, so
-		// an operator who mistyped one of two spellings would otherwise be told
-		// which code failed but not which knob or what it read.
-		return 0, false, aerr.WithContext(aerr.APERTURE_CONFIG_INVALID,
-			fmt.Sprintf("cli: --enumerate-limit / %s is not a whole number: %q", envEnumerateLimit, raw),
-			map[string]any{
-				"setting": "--enumerate-limit / " + envEnumerateLimit,
-				"value":   raw,
-				"valid":   "a whole number, e.g. 1500",
-				"default": strconv.Itoa(engine.DefaultEnumerateLimit) + " — the setting may simply be omitted",
-			})
+		return 0, false, badEnumerateLimit(raw, "is not a whole number")
+	}
+	if n <= 0 {
+		// engine.WithEnumerateLimit NORMALISES a non-positive bound to
+		// DefaultEnumerateLimit rather than storing it, and that is correct for the
+		// library: an Option cannot report an error, and a Go embedder handing over
+		// a computed 0 should get a sane engine instead of a zero bound that reads
+		// as "no access". It is wrong for a human, though — an operator who typed
+		// -5 would be served 1000 while believing the bound is what they wrote,
+		// which is the exact invisibility this flag exists to remove. So the
+		// boundary refuses what the library would have absorbed, and the value
+		// never reaches the option. Lenient normalisation in the library, input
+		// validation at the boundary; both are right.
+		return 0, false, badEnumerateLimit(raw, "must be greater than zero")
 	}
 	return n, true, nil
+}
+
+// badEnumerateLimit builds the single refusal both --enumerate-limit rejections
+// share, so a malformed value and an out-of-range one read identically apart
+// from the reason.
+//
+// The setting and the rejected value go in the MESSAGE, not only in the context
+// map: nothing on the CLI path renders a CodedError's Context, so an operator
+// who mistyped one of two spellings would otherwise be told which code failed
+// but not which knob or what it read. The value is the operator's own input and
+// carries no account data.
+func badEnumerateLimit(raw, why string) error {
+	return aerr.WithContext(aerr.APERTURE_CONFIG_INVALID,
+		fmt.Sprintf("cli: --enumerate-limit / %s %s: %q", envEnumerateLimit, why, raw),
+		map[string]any{
+			"setting": "--enumerate-limit / " + envEnumerateLimit,
+			"value":   raw,
+			"valid":   "a whole number greater than zero, e.g. 1500",
+			"default": strconv.Itoa(engine.DefaultEnumerateLimit) + " — the setting may simply be omitted",
+		})
 }
 
 // serveEngineOptions turns the serve flags that configure the DECISION ENGINE
