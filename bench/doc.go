@@ -31,6 +31,13 @@
 //     enumeration at the default bound — which divides machine speed and
 //     baseline drift out of the measurement.
 //
+//     The wall-clock cases cannot do that: their targets are absolute, from the
+//     PRD. They get the other robust measurement instead — assertCheckNFR
+//     PARTITIONS each case's sample budget into rounds and asserts against the
+//     BEST round, so a window that lost its core costs one round rather than the
+//     run. The thresholds are untouched by that; see nfrThroughputRounds and
+//     nfrP99Rounds in bench_test.go for what the trade buys and what it costs.
+//
 // The fixture (buildModel) is intentionally non-trivial: many accounts,
 // principals, roles, groups, and grants, with overlapping wildcard scopes and
 // deny-overrides carve-outs, so grant resolution exercises a real candidate set
