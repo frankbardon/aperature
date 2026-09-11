@@ -3,6 +3,7 @@ package bench
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"github.com/frankbardon/aperture/engine"
@@ -29,11 +30,20 @@ import (
 //	scope.inclusiveResolver.Members -> enumerateOfType(keep: Contains) -> 1 eval per LISTED candidate
 //	engine.enumerateWithSubjects    -> evaluate -> scopeCoverer.cover -> 1 eval per SELECTED candidate
 //
-// Both halves are bounded by the SAME existing limits — scope.DefaultMaxMembers
-// on the member set and engine.DefaultEnumerateLimit on the result, both 1000 —
-// so the worst case is fixed rather than proportional to the object population.
-// TestEnumerateRuleBackedStaysBounded below pins that; no second limit exists
-// and none is introduced here.
+// Both halves are bounded by the SAME single number — the engine's configured
+// enumeration bound, which it also stamps into the scope member gather, so the
+// member set and the result cap can never disagree. Unconfigured that number is
+// engine.DefaultEnumerateLimit (1000, matching scope.DefaultMaxMembers);
+// engine.WithEnumerateLimit replaces it. Either way the worst case is fixed by
+// the bound rather than proportional to the object population.
+// TestEnumerateRuleBackedStaysBounded below pins that at both the default and a
+// raised bound; no second limit exists and none is introduced here.
+//
+// That is also why the bound is a MEASURED axis of this sweep and not just an
+// asserted one. It is the operator's only knob on the worst case, and raising it
+// raises the fan-out proportionally (2 x candidates rule evaluations), so a host
+// about to raise it in production should be able to read the cost off a
+// benchmark rather than estimate it.
 //
 // These benchmarks are INFORMATIONAL. They are deliberately NOT part of
 // TestCheckNFR's asserted gate: that gate is about the cached single-Check NFR
@@ -42,48 +52,70 @@ import (
 // candidate cost, so a future change that regresses it has something to regress
 // against.
 //
-// MEASURED COST PER CANDIDATE (Apple M1 Max, go test -benchtime=2s, audit off,
-// one scalar-comparison rule over one metadata field, every candidate selected):
+// MEASURED (Apple M1 Max, 10 cores, go1.26.5 darwin/arm64,
+// `go test -bench BenchmarkEnumerateRuleBacked -benchmem -benchtime=2s -count=3`,
+// medians of 3; audit off, one scalar-comparison rule over one metadata field,
+// every candidate selected). "bound" is the value configured through
+// engine.WithEnumerateLimit; "—" is an engine configured with none, running on
+// engine.DefaultEnumerateLimit:
 //
-//	candidates |    ns/op    | ns/candidate | allocs/op | B/op
-//	-----------+-------------+--------------+-----------+-----------
-//	        10 |      40 472 |        4 047 |       532 |    37 223
-//	       100 |     391 125 |        3 911 |     5 075 |   367 144
-//	     1 000 |   4 195 286 |        4 195 |    50 118 | 3 690 931
-//	     2 000 |   4 434 250 |        4 434 |    50 123 | 3 725 176
+//	candidates | bound |    ns/op   | ids | ns/candidate | allocs/op |   B/op
+//	-----------+-------+------------+-----+--------------+-----------+----------
+//	        10 |   —   |     54 724 |  10 |        5 472 |       596 |   45 060
+//	       100 |   —   |    567 891 | 100 |        5 679 |     5 679 |  442 772
+//	     1 000 |   —   |  6 317 880 |1 000|        6 318 |    56 133 |4 444 912
+//	     2 000 |   —   |  5 929 466 |1 000|        5 929 |    56 136 |4 478 722
+//	     1 000 | 2 000 |  5 743 803 |1 000|        5 744 |    56 127 |4 444 822
+//	     2 000 | 2 000 | 11 638 062 |2 000|        5 819 |   112 176 |8 964 388
+//	     4 000 | 2 000 | 12 005 617 |2 000|        6 003 |   112 162 |9 025 695
 //
 // And the rule half in isolation (BenchmarkEnumerateRuleBackedRuleEval, 1 000
-// rules.Engine.Selected calls with no engine around them):
+// rules.Engine.Selected calls with no engine around them), same run:
 //
-//	1 235 ns/eval, 14 allocs/eval, ~945 B/eval
+//	2 348 ns/eval, 17 allocs/eval, ~1 297 B/eval
 //
-// Read four things off that:
+// The whole table — the untouched RuleEval row included — sits roughly 40% above
+// the figures committed when these benchmarks first landed (4 195 ns/candidate,
+// 1 235 ns/eval). Every row moved together, so read the table's INTERNAL ratios,
+// which is what it is for; the absolute numbers are one machine on one day.
 //
-//  1. **~4.2 µs and ~50 allocations per candidate**, flat. The cost is LINEAR in
-//     the candidate count with no super-linear term hiding in the resolver.
-//  2. **The rule is ~60% of it.** Two evaluations per candidate at 1 235 ns is
-//     ~2.5 µs of the ~4.2 µs, and 28 of the ~50 allocations. The remaining
-//     ~1.7 µs is the decision engine's own per-candidate work. So halving the
-//     rule cost is worth about a third of the total, and the per-decision AST
-//     re-walk (BenchmarkRuleCompileCached) is the largest single line item
-//     inside the rule half.
-//  3. **The 1 000 and 2 000 rows are the same** to within run-to-run noise.
-//     Doubling the object population does not double the work, because the
-//     existing bound clamps the member set before the provider is even fully
-//     walked. That is the bound doing its job, and it makes the worst case a
-//     constant a host can budget for.
-//  4. **A bound-limit enumeration is ~4.2 ms** — around 1 000x a cached Check.
-//     That is arithmetic, not a defect (it IS ~2 000 rule evaluations plus 1 000
-//     decisions), but it means rule-backed Enumerate is an interactive
-//     operation, not a hot-path one.
+// Read five things off it:
+//
+//  1. **~5.7–6.3 µs and ~56 allocations per RETURNED id**, flat across every row
+//     at every bound. The cost is LINEAR in the result size, with no super-linear
+//     term hiding in the resolver at the raised bound either.
+//  2. **Doubling the bound doubles the cost, and no more than doubles it.**
+//     1 000 ids -> 2 000 ids is 6.32 ms -> 11.64 ms (1.84x), 56 133 -> 112 176
+//     allocations (2.00x), 4.44 MB -> 8.96 MB (2.02x). Budget a raise as
+//     proportional: roughly **4.5 KB and 56 allocations of transient garbage per
+//     id the bound allows**, so a bound of 10 000 is a ~45 MB, ~58 ms
+//     enumeration.
+//  3. **Raising the bound is free until the population reaches it.** The
+//     1 000-candidate row at bound 2 000 costs what the same row costs
+//     unconfigured — 5.74 ms vs 6.32 ms, 56 127 vs 56 133 allocations, the same
+//     B/op to four digits. Configuring headroom a deployment does not use is not
+//     paid for.
+//  4. **The raised bound clamps exactly as the default one does.** 4 000
+//     candidates at bound 2 000 costs what 2 000 candidates at bound 2 000 costs
+//     (12.01 vs 11.64 ms, 112 162 vs 112 176 allocations); 2 000 candidates
+//     unconfigured costs what 1 000 do. Past the bound the extra objects are
+//     never visited, so the worst case stays a constant a host can budget for —
+//     it is just a constant the operator now chooses.
+//  5. **The rule is ~55–60% of it.** Two evaluations per candidate at 2 348 ns is
+//     ~4.7 µs of the ~5.8–6.3 µs, and 34 of the ~56 allocations. The rest is the
+//     decision engine's own per-candidate work. So halving the rule cost is worth
+//     about a third of the total, and the per-decision AST re-walk
+//     (BenchmarkRuleCompileCached) is the largest single line item inside the
+//     rule half.
 //
 // One asymmetry the table does not show, worth knowing before reading a caller's
 // EnumerateRequest.Limit as a cost knob: a smaller Limit shortens only the
 // SECOND half. The engine bounds its result loop by the caller's limit, but the
-// member set is gathered first and is bounded by scope.DefaultMaxMembers
-// regardless — so Limit=10 over 1 000 candidates still pays ~1 000 rule
+// member set is gathered first and is bounded by the engine's CONFIGURED bound
+// regardless — so Limit=10 against a bound of 1 000 still pays ~1 000 rule
 // evaluations to build the member set, then ~10 decisions. That is a property of
-// the existing bounds, not something these benchmarks change.
+// where the bound sits, not something these benchmarks change: the knob that
+// moves the first half is the configured bound, not the request's Limit.
 
 // The rule-backed enumeration fixture's identifiers. It is a SEPARATE store,
 // registry and rules engine from buildModel's: the existing benchmarks are the
@@ -99,11 +131,57 @@ const (
 	enumProject    = "projenum"
 )
 
-// enumerateCandidateSizes is the sweep. It brackets the bound rather than
-// stopping at it: scope.DefaultMaxMembers is where the member set clamps, and
-// the 2x row exists to show that going past it costs nothing more.
-func enumerateCandidateSizes() []int {
-	return []int{10, 100, scope.DefaultMaxMembers, 2 * scope.DefaultMaxMembers}
+// enumerateRaisedBound is the configured ceiling the raised-bound rows run at:
+// twice the default, so those rows measure a result set the default rows
+// literally cannot produce. It is a value handed to engine.WithEnumerateLimit,
+// never a constant the fixture reads back — the point of the sweep is to
+// measure the real configured path, so the bound must travel engine clamp ->
+// scope member gather -> provider list exactly as a deployment's would.
+const enumerateRaisedBound = 2 * scope.DefaultMaxMembers
+
+// enumerateCase is one row of the sweep: a candidate population and the bound
+// the engine is configured with, if any.
+type enumerateCase struct {
+	// candidates is how many objects the provider holds.
+	candidates int
+	// bound is the ceiling to configure through engine.WithEnumerateLimit.
+	// ZERO means configure none, so the engine's own default applies — those are
+	// the committed baseline rows, and they are kept so a single `make bench` run
+	// carries both halves of the before/after comparison.
+	bound int
+}
+
+// name keeps the unconfigured rows spelled exactly as they always were
+// (candidates-N), so a benchstat against the committed baseline still lines the
+// default rows up; a configured row carries its bound in the name.
+func (c enumerateCase) name() string {
+	if c.bound <= 0 {
+		return fmt.Sprintf("candidates-%d", c.candidates)
+	}
+	return fmt.Sprintf("candidates-%d/bound-%d", c.candidates, c.bound)
+}
+
+// enumerateCases is the sweep. It has two halves.
+//
+// The unconfigured half brackets the DEFAULT bound rather than stopping at it:
+// scope.DefaultMaxMembers is where the member set clamps, and the 2x row shows
+// that going past it costs nothing more.
+//
+// The configured half raises the bound through engine.WithEnumerateLimit and
+// brackets THAT: below it (the bound is never reached, so raising it is free),
+// at it, and past it (the raised bound clamps, exactly as the default one did).
+// Without those rows the raised bound would be a number nothing ever ran at —
+// the fails-by-passing shape, where the feature is asserted but never exercised.
+func enumerateCases() []enumerateCase {
+	return []enumerateCase{
+		{candidates: 10},
+		{candidates: 100},
+		{candidates: scope.DefaultMaxMembers},
+		{candidates: 2 * scope.DefaultMaxMembers},
+		{candidates: scope.DefaultMaxMembers, bound: enumerateRaisedBound},
+		{candidates: enumerateRaisedBound, bound: enumerateRaisedBound},
+		{candidates: 2 * enumerateRaisedBound, bound: enumerateRaisedBound},
+	}
 }
 
 // enumerateModel is the self-contained rule-backed enumeration fixture.
@@ -113,8 +191,14 @@ type enumerateModel struct {
 	query service.EnumerateQuery
 	// candidates is how many objects the provider holds.
 	candidates int
+	// bound is the ceiling the engine was configured with, or zero when it was
+	// configured with none.
+	bound int
+	// effective is the ceiling this enumeration actually runs under: the
+	// configured bound, or the engine's default when none was configured.
+	effective int
 	// want is how many ids Enumerate must return: every candidate is selected by
-	// the rule, so it is the candidate count clamped by the existing bound.
+	// the rule, so it is the candidate count clamped by the effective bound.
 	want int
 }
 
@@ -122,12 +206,19 @@ type enumerateModel struct {
 // `candidates` documents, all of which the rule selects, and returns the facade
 // plus the enumeration query.
 //
+// A POSITIVE bound is configured on the engine through
+// engine.WithEnumerateLimit; a non-positive one configures nothing at all, so
+// the engine runs on its own default. The two are not the same wiring even when
+// the numbers coincide, which is why the unconfigured rows pass zero rather than
+// passing engine.DefaultEnumerateLimit: the baseline must keep measuring the
+// path a deployment that never set the flag takes.
+//
 // Every candidate is selected on purpose. A rule that filtered some of them out
 // would measure a mixture of the selected and rejected paths and make the
 // per-candidate number depend on the selectivity rather than on the machinery;
 // selecting all of them is also the worst case, because a rejected candidate
 // skips the second (per-decision) evaluation.
-func buildEnumerateModel(tb testing.TB, candidates int) enumerateModel {
+func buildEnumerateModel(tb testing.TB, candidates, bound int) enumerateModel {
 	tb.Helper()
 	ctx := context.Background()
 	store := memory.New()
@@ -190,14 +281,33 @@ func buildEnumerateModel(tb testing.TB, candidates int) enumerateModel {
 		},
 	}, reg)
 
-	eng := engine.New(store, engine.WithScopeResolution(
-		scope.DefaultRegistry(),
-		engine.ScopeDeps{Lister: reg, Rules: ruleEng},
-	))
+	opts := []engine.Option{
+		engine.WithScopeResolution(
+			scope.DefaultRegistry(),
+			engine.ScopeDeps{Lister: reg, Rules: ruleEng},
+		),
+		// An enumeration that lands exactly on its bound WARNs through the
+		// engine's logger, and every row of this sweep is designed to land exactly
+		// on its bound. With no logger wired that warning goes to slog.Default(),
+		// which means b.N stderr writes per case: unreadable output, and a
+		// formatting cost charged to the enumeration being measured. Discarding it
+		// measures the enumeration rather than the log handler. The warning itself
+		// is asserted where it belongs, in engine/enumerate_bound_warning_test.go.
+		engine.WithLogger(slog.New(slog.DiscardHandler)),
+	}
+	effective := engine.DefaultEnumerateLimit
+	if bound > 0 {
+		// The configured path, exercised as a deployment configures it: the option,
+		// never a constant read back out. This one value is what the engine clamps
+		// the result to AND what it stamps into the scope member gather.
+		opts = append(opts, engine.WithEnumerateLimit(bound))
+		effective = bound
+	}
+	eng := engine.New(store, opts...)
 
 	want := candidates
-	if want > scope.DefaultMaxMembers {
-		want = scope.DefaultMaxMembers
+	if want > effective {
+		want = effective
 	}
 	return enumerateModel{
 		svc: service.New(eng),
@@ -208,6 +318,8 @@ func buildEnumerateModel(tb testing.TB, candidates int) enumerateModel {
 			Pattern:   "account:" + enumAccount + "/project:" + enumProject + "/document:*",
 		},
 		candidates: candidates,
+		bound:      bound,
+		effective:  effective,
 		want:       want,
 	}
 }
@@ -229,20 +341,25 @@ func warmEnumerate(tb testing.TB, m enumerateModel) {
 		tb.Fatalf("warm Enumerate: %v", err)
 	}
 	if len(ids) != m.want {
-		tb.Fatalf("warm Enumerate returned %d ids over %d candidates, want %d",
-			len(ids), m.candidates, m.want)
+		tb.Fatalf("warm Enumerate returned %d ids over %d candidates at effective bound %d "+
+			"(configured %d), want %d", len(ids), m.candidates, m.effective, m.bound, m.want)
 	}
 }
 
 // BenchmarkEnumerateRuleBacked sweeps a rule-backed Enumerate across candidate-
-// set sizes, reporting ns/op, allocs/op, and the derived per-candidate cost.
+// set sizes AND configured bounds, reporting ns/op, allocs/op, and the derived
+// per-candidate cost.
+//
+// The unconfigured rows and the raised-bound rows run in the SAME invocation, so
+// "what does raising the bound cost?" is answered by one `make bench` output
+// rather than by comparing two runs on two machines.
 //
 // It reports and asserts nothing about a threshold — see the file comment.
 func BenchmarkEnumerateRuleBacked(b *testing.B) {
 	ctx := context.Background()
-	for _, n := range enumerateCandidateSizes() {
-		b.Run(fmt.Sprintf("candidates-%d", n), func(b *testing.B) {
-			m := buildEnumerateModel(b, n)
+	for _, c := range enumerateCases() {
+		b.Run(c.name(), func(b *testing.B) {
+			m := buildEnumerateModel(b, c.candidates, c.bound)
 			warmEnumerate(b, m)
 
 			b.ReportAllocs()
@@ -258,9 +375,12 @@ func BenchmarkEnumerateRuleBacked(b *testing.B) {
 			}
 			b.StopTimer()
 			// The number this benchmark exists to publish. Dividing by the
-			// RETURNED id count (not the candidate count) keeps the 2x-bound row
-			// comparable with the at-bound row: past the bound the extra objects
-			// are never visited, so charging them would understate the real cost.
+			// RETURNED id count (not the candidate count) keeps the past-the-bound
+			// rows comparable with the at-bound rows: past the bound the extra
+			// objects are never visited, so charging them would understate the real
+			// cost. It is also what makes rows at DIFFERENT bounds comparable —
+			// a flat ns/candidate across bounds is what "raising it is linear"
+			// means, and a rising one is what a super-linear term would look like.
 			if m.want > 0 && b.N > 0 {
 				b.ReportMetric(
 					float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(m.want),
@@ -329,33 +449,87 @@ func BenchmarkEnumerateRuleBackedRuleEval(b *testing.B) {
 }
 
 // TestEnumerateRuleBackedStaysBounded is the ungated, always-on guard that the
-// enumeration is bounded by the EXISTING limits and by nothing else.
+// enumeration is bounded by the limit it was configured with and by nothing
+// else.
 //
-// It seeds twice as many objects as scope.DefaultMaxMembers and asserts the
-// result is exactly the bound: not more (the resolver would be materialising an
-// unbounded member set) and not less (a second, tighter limit would have crept
-// in, and a silently truncated Enumerate is a wrong access-control answer, not a
-// performance tradeoff). It is structural arithmetic over the fixture rather
-// than a timing assertion, so it cannot flake and runs in the default make test.
+// It seeds twice as many objects as the bound and asserts the result is exactly
+// the bound: not more (the resolver would be materialising an unbounded member
+// set) and not less (a second, tighter limit would have crept in, and a silently
+// truncated Enumerate is a wrong access-control answer, not a performance
+// tradeoff). It is structural arithmetic over the fixture rather than a timing
+// assertion, so it cannot flake and runs in the default make test.
 func TestEnumerateRuleBackedStaysBounded(t *testing.T) {
-	m := buildEnumerateModel(t, 2*scope.DefaultMaxMembers)
+	// Unconfigured: the original assertion, unchanged. An engine handed no bound
+	// gathers and clamps at the default, and the 2x population proves the clamp is
+	// real rather than a population that simply ran out.
+	t.Run("unconfigured", func(t *testing.T) {
+		m := buildEnumerateModel(t, 2*scope.DefaultMaxMembers, 0)
+		ids := enumerateIDs(t, m)
+		if len(ids) != scope.DefaultMaxMembers {
+			t.Fatalf("Enumerate over %d rule-selected candidates returned %d ids, want exactly "+
+				"the existing bound %d", m.candidates, len(ids), scope.DefaultMaxMembers)
+		}
+		if len(ids) > engine.DefaultEnumerateLimit {
+			t.Fatalf("Enumerate returned %d ids, exceeding engine.DefaultEnumerateLimit %d",
+				len(ids), engine.DefaultEnumerateLimit)
+		}
+	})
+
+	// Configured above the default, population above the configured bound: the
+	// clamp is still a real clamp, but now AT the raised number. The extra
+	// assertion is what stops this becoming a tautology — the result has to exceed
+	// the default, so a bound that silently fell back to 1000 anywhere between the
+	// engine's clamp, the scope member gather and the provider list fails here.
+	t.Run("configured-above-the-default", func(t *testing.T) {
+		m := buildEnumerateModel(t, 2*enumerateRaisedBound, enumerateRaisedBound)
+		ids := enumerateIDs(t, m)
+		if len(ids) != enumerateRaisedBound {
+			t.Fatalf("Enumerate over %d rule-selected candidates at a configured bound of %d "+
+				"returned %d ids, want exactly the configured bound",
+				m.candidates, enumerateRaisedBound, len(ids))
+		}
+		if len(ids) <= engine.DefaultEnumerateLimit {
+			t.Fatalf("Enumerate at a configured bound of %d returned %d ids, which does not "+
+				"exceed engine.DefaultEnumerateLimit %d — the raised bound never took effect",
+				enumerateRaisedBound, len(ids), engine.DefaultEnumerateLimit)
+		}
+	})
+
+	// Configured above the POPULATION: nothing clamps, and the answer is every
+	// candidate — more than the default would ever have returned. This is the row
+	// that proves the raised bound widens the result rather than merely raising a
+	// ceiling nothing reaches.
+	t.Run("configured-above-the-population", func(t *testing.T) {
+		population := engine.DefaultEnumerateLimit + 500
+		m := buildEnumerateModel(t, population, 2*population)
+		ids := enumerateIDs(t, m)
+		if len(ids) != population {
+			t.Fatalf("Enumerate over %d rule-selected candidates at a configured bound of %d "+
+				"returned %d ids, want all %d — no bound should have applied",
+				population, 2*population, len(ids), population)
+		}
+		if len(ids) <= engine.DefaultEnumerateLimit {
+			t.Fatalf("Enumerate returned %d ids, which does not exceed "+
+				"engine.DefaultEnumerateLimit %d — the raised bound never took effect",
+				len(ids), engine.DefaultEnumerateLimit)
+		}
+	})
+}
+
+// enumerateIDs runs the fixture's query once and asserts every returned id is a
+// real candidate in canonical order, so a bound assertion can never be satisfied
+// by the right NUMBER of the wrong ids.
+func enumerateIDs(t *testing.T, m enumerateModel) []string {
+	t.Helper()
 	ids, err := m.svc.Enumerate(context.Background(), m.query)
 	if err != nil {
 		t.Fatalf("Enumerate: %v", err)
 	}
-	if len(ids) != scope.DefaultMaxMembers {
-		t.Fatalf("Enumerate over %d rule-selected candidates returned %d ids, want exactly "+
-			"the existing bound %d", m.candidates, len(ids), scope.DefaultMaxMembers)
-	}
-	if len(ids) > engine.DefaultEnumerateLimit {
-		t.Fatalf("Enumerate returned %d ids, exceeding engine.DefaultEnumerateLimit %d",
-			len(ids), engine.DefaultEnumerateLimit)
-	}
-	// Every returned id must be a real candidate, in canonical order.
 	for i, id := range ids {
 		if want := enumObjectID(i); id != want {
 			t.Fatalf("id[%d] = %q, want %q (Enumerate must return candidates in canonical order)",
 				i, id, want)
 		}
 	}
+	return ids
 }
