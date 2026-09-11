@@ -102,6 +102,35 @@ than the engine's clamp truncates the set before the engine ever sees it, and
 nothing in the result says so. Configure the bound on the engine; the deps
 inherit it.
 
+### A result on the bound is a warning, not a flag
+
+When an enumeration comes back holding **exactly** its effective bound, the
+engine logs a WARN through `engine.WithLogger` (`slog.Default()` when none is
+wired) naming the bound that was hit:
+
+```
+engine: enumeration returned exactly its bound; the result may be truncated
+  bound=1000 configured_bound=1000 requested_limit=0
+  account=acme action=read pattern=account:acme/**
+```
+
+Read the wording literally. It is a **hint, not an assertion** — a complete set
+of exactly that size looks identical from inside the engine, and the log must
+never be quoted as proof that anything was dropped. `bound` is the cap this
+enumeration actually ran under (the caller's own `Limit` when that was smaller);
+`configured_bound` is the engine's ceiling. A result **below** the bound logs
+nothing.
+
+This is **log-only** signalling: `Enumerate` still returns `([]string, error)`
+and grows no truncation flag, so a caller still cannot distinguish a truncated
+result from a complete one. That is the accepted cost of not breaking the return
+shape — an operator who sees the warning re-asks with a higher bound.
+
+The engine is the **only** place it is raised. One bound flows all the way down
+(the engine clamp, `scope.Deps.MaxMembers`, the provider list), so a starve in
+the scope or provider layer surfaces here as a result sitting on the bound;
+`scope` and `provider` carry no logger and are not given one.
+
 ## Enumerate's metadata filter
 
 `EnumerateRequest.Fields` (`map[string]any`, optional) narrows the result by
