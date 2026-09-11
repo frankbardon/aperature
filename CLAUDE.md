@@ -250,7 +250,28 @@ Gated, NOT in `make test` (a loaded runner would flake them):
   that it catches a super-linear term in the fan-out without flaking on a loaded
   runner. Do not convert it to an absolute ceiling: a bound-sized enumeration is
   milliseconds by design, and the justification for the number lives beside it in
-  `bench/enumerate_test.go`.
+  `bench/enumerate_test.go`. The wall-clock cases (`TestCheckNFR`,
+  `TestCheckNFRCollections`, `TestCheckNFRAttributes`) cannot divide machine speed
+  out that way — their targets are absolute, from the PRD — so they take the other
+  robust measurement: `assertCheckNFR` **partitions** each case's sample budget
+  (`nfrSamples`) into rounds (`nfrThroughputRounds` = 50, `nfrP99Rounds` = 10) and
+  asserts against the **best** round. Rounds partition, never multiply — a gate
+  run does the same total work — and the two counts differ because throughput is a
+  rate (many short windows) and p99 is a percentile (fewer, larger ones, or the
+  estimator goes noisy). **`p99Ceiling` (1 ms) and `throughputMin` (10 000) are
+  not the knob:** loosening a threshold to stop a flake is the regression, not the
+  fix. Measured A/B on one machine, same competing load held across both arms:
+  at load average ~16–19 the contiguous measurement cleared the floor by 1.10×
+  (10,980 checks/sec) where best-of-rounds cleared it by 1.31× (13,055), and the
+  contiguous one *failed* at ~5,000–6,200 once load passed ~25. **It widens the
+  margin; it does not confer immunity** — past roughly 10× core oversubscription
+  every window is contended, there is no clean round to take the best of, and the
+  gate fails either way. The cost is written down where the constants are set — an
+  *intermittent* regression can now pass, a uniform one still fails — and the
+  failure text says "that is the BEST of N rounds" so a red gate is never
+  dismissed as one noisy second. Change either constant and
+  `docs/benchmarks.md` ("Why best-of-rounds, and what it costs") plus
+  `docs/src/operations/performance.md` move with it.
 - `node internal/server/static/js/rules-serializer.test.js` — CI is node-free, so
   this is a manual development aid; the Go contract tests above are the real gate.
 - `APERTURE_PG_INTEGRATION=1 APERTURE_PG_DSN=<dsn> go test -run TestPostgresIntegration ./seed/`
