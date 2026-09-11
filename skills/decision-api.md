@@ -77,9 +77,30 @@ enumerates unboundedly:
 - Each candidate is then run through the SAME deny-overrides/specificity
   decision as Check, so a candidate carved out by a more-specific or
   equal-specificity deny is dropped. A denied object is **never** returned.
-- The result is capped by `Limit` (default `DefaultEnumerateLimit`), and each
-  resolver's `Members` is itself bounded. Output order is deterministic
-  (sorted by canonical id).
+- The result is capped by `Limit`, and each resolver's `Members` is itself
+  bounded. Output order is deterministic (sorted by canonical id).
+
+### The bound is configured, not compiled in
+
+`engine.WithEnumerateLimit(n int)` sets the ceiling. A request `Limit <= 0`
+receives it; a larger request `Limit` is clamped **down** to it. An engine built
+without the option uses `engine.DefaultEnumerateLimit` (1000), which is the
+default and not the ceiling.
+
+A non-positive `n` is **normalised to the default**, never stored. An `Option`
+cannot report an error, and a zero bound would turn every enumeration into an
+empty result that reads exactly like "no access" — so a misconfiguration degrades
+to the documented default. Parse and validate an operator-supplied value at the
+surface that reads it, where an `APERTURE_CONFIG_INVALID` can still reach them.
+
+`WithScopeResolution` stamps the configured bound into the `ScopeDeps` the engine
+keeps, as `Deps.MaxMembers`, whichever order the two options are passed in. The
+stamp is **unconditional** and overwrites a `MaxMembers` a caller-built
+`ScopeDeps` literal carried — `internal/cli` builds exactly such a literal. One
+enumeration must not be governed by two numbers: a member gather bounded lower
+than the engine's clamp truncates the set before the engine ever sees it, and
+nothing in the result says so. Configure the bound on the engine; the deps
+inherit it.
 
 ## Enumerate's metadata filter
 

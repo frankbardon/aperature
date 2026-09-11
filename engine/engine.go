@@ -323,6 +323,11 @@ type Engine struct {
 	store             model.Storage
 	coverer           coverer
 	enforceMembership bool
+	// enumerateLimit is the configured ceiling on an enumeration — the single
+	// number the whole decision graph inherits. Zero means DefaultEnumerateLimit;
+	// New normalises it, and WithEnumerateLimit never stores a non-positive value,
+	// so a zero here only ever means "built without New".
+	enumerateLimit int
 	// metadata is the object-metadata source Enumerate's Fields predicate reads
 	// through (WithMetadata). Nil by default and consulted ONLY by a request that
 	// carries Fields, so the unfiltered decision path never touches it.
@@ -358,7 +363,68 @@ func New(store model.Storage, opts ...Option) *Engine {
 	if e.now == nil {
 		e.now = time.Now
 	}
+	if e.enumerateLimit <= 0 {
+		e.enumerateLimit = DefaultEnumerateLimit
+	}
+	// Stamped AFTER every option has run, so the bound the engine clamps with and
+	// the bound the scope layer gathers with are the same number no matter which
+	// order WithEnumerateLimit and WithScopeResolution were passed in.
+	e.stampScopeBound()
 	return e
+}
+
+// enumerateBound is the engine's effective enumeration ceiling. It tolerates a
+// zero field so an Engine obtained other than through New (a shallow copy, a
+// zero value in a test) still reports a positive bound rather than clamping
+// every enumeration to nothing.
+func (e *Engine) enumerateBound() int {
+	if e.enumerateLimit <= 0 {
+		return DefaultEnumerateLimit
+	}
+	return e.enumerateLimit
+}
+
+// stampScopeBound writes the engine's effective enumeration bound into the
+// ScopeDeps its scope coverer holds.
+//
+// The stamp is UNCONDITIONAL and overwrites whatever MaxMembers a caller-built
+// ScopeDeps literal carried — internal/cli builds exactly such a literal. One
+// enumeration must not be governed by two different numbers: a scope layer
+// gathering to a smaller bound than the engine clamps to would silently truncate
+// the member set before the engine ever saw it, and nothing in the result would
+// say so. Configure the bound on the engine (WithEnumerateLimit); the deps
+// inherit it.
+//
+// It is a no-op on an engine using the literal coverer, which holds no deps.
+func (e *Engine) stampScopeBound() {
+	sc, ok := e.coverer.(scopeCoverer)
+	if !ok {
+		return
+	}
+	sc.deps.MaxMembers = e.enumerateBound()
+	e.coverer = sc
+}
+
+// WithEnumerateLimit sets the ceiling an enumeration is bounded by: the value an
+// EnumerateRequest with a non-positive Limit receives, and the value a larger
+// request Limit is clamped down to. It is also stamped into the ScopeDeps the
+// engine wires (WithScopeResolution), so the member gather and the result cap
+// agree.
+//
+// A non-positive n is NORMALISED to DefaultEnumerateLimit rather than stored.
+// An Option cannot report an error, and a silently zero bound would turn every
+// enumeration into an empty result that reads exactly like "no access" — so a
+// misconfiguration degrades to the documented default instead of fabricating a
+// denial. Validate and report a bad configured value at the surface that parses
+// it, where an APERTURE_CONFIG_INVALID can still reach the operator.
+func WithEnumerateLimit(n int) Option {
+	return func(e *Engine) {
+		if n <= 0 {
+			n = DefaultEnumerateLimit
+		}
+		e.enumerateLimit = n
+		e.stampScopeBound()
+	}
 }
 
 // WithClock overrides the engine's clock. It governs impersonation time-box
@@ -383,6 +449,11 @@ func WithClock(now func() time.Time) Option {
 //
 // A nil registry is treated as scope.DefaultRegistry() so the three built-in
 // strategies are available out of the box.
+//
+// The engine's configured enumeration bound (WithEnumerateLimit) is stamped into
+// the deps it keeps, so a caller who hands in a bare ScopeDeps literal — as
+// internal/cli does — still gathers members against the same number the engine
+// clamps the result to. See stampScopeBound.
 func WithScopeResolution(registry *scope.Registry, deps ...ScopeDeps) Option {
 	return func(e *Engine) {
 		reg := registry
@@ -394,6 +465,7 @@ func WithScopeResolution(registry *scope.Registry, deps ...ScopeDeps) Option {
 			d = scope.Deps(deps[0])
 		}
 		e.coverer = scopeCoverer{registry: reg, deps: d, cache: newPatternCache()}
+		e.stampScopeBound()
 	}
 }
 

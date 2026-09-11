@@ -270,6 +270,14 @@ func (noRules) Selected(context.Context, string, identity.Identity, string, stri
 type Deps struct {
 	Lister ObjectLister
 	Rules  RuleEvaluator
+	// MaxMembers is the enumeration ceiling this wiring gathers members against.
+	// Zero — the zero value, and what a caller who does not care leaves it as —
+	// means DefaultMaxMembers.
+	//
+	// It is not normally set by hand: engine.WithScopeResolution stamps the
+	// engine's configured enumeration bound into it, so the member gather and the
+	// result cap are one number rather than two that can disagree.
+	MaxMembers int
 }
 
 func (d Deps) lister() ObjectLister {

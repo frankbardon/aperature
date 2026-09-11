@@ -12,15 +12,21 @@ import (
 )
 
 // DefaultEnumerateLimit bounds Enumerate's result when the caller imposes no
-// positive limit, so an enumeration can never materialise an unbounded set even
-// if a provider lister would. It matches the scope/provider enumeration bound.
+// positive limit and the engine was built with no configured bound, so an
+// enumeration can never materialise an unbounded set even if a provider lister
+// would. It matches the scope/provider enumeration bound.
+//
+// It is the DEFAULT, not the ceiling: WithEnumerateLimit replaces it, and the
+// engine clamps against the value it was configured with.
 const DefaultEnumerateLimit = 1000
 
 // EnumerateRequest is the input to Enumerate: the principal asking, the action,
 // and the object PATTERN that bounds the search, scoped to an account. Pattern
 // is an identity pattern (e.g. "account:acme/**" or "account:acme/document:*")
 // that both bounds the candidate set and is intersected with each grant's own
-// scope. Limit caps the number of returned ids; <= 0 means DefaultEnumerateLimit.
+// scope. Limit caps the number of returned ids; <= 0 means the engine's
+// configured bound (WithEnumerateLimit, default DefaultEnumerateLimit), and a
+// larger Limit is clamped down to it.
 type EnumerateRequest struct {
 	// Account is the active account the enumeration is scoped to. Mandatory.
 	Account string
@@ -67,7 +73,8 @@ type EnumerateRequest struct {
 	// request's account, and a dangling referenced identity is skipped rather than
 	// failing the decision.
 	References []ReferenceEdge
-	// Limit caps the number of returned object ids. <= 0 means the default bound.
+	// Limit caps the number of returned object ids. <= 0 means the engine's
+	// configured bound; a Limit above it is clamped down to it.
 	Limit int
 }
 
@@ -126,8 +133,9 @@ func WithMetadata(f MetadataFetcher) Option {
 //
 // Enumerate is the most cache-sensitive op, so it is deliberately bounded: each
 // resolver's Members is itself limited, and the overall result is capped by
-// Limit (default DefaultEnumerateLimit). Object order is deterministic (sorted
-// by canonical id). An operational failure (storage, an unresolvable strategy,
+// Limit, itself bounded by the engine's configured enumeration bound
+// (WithEnumerateLimit, default DefaultEnumerateLimit). Object order is
+// deterministic (sorted by canonical id). An operational failure (storage, an unresolvable strategy,
 // or an unconfigured lister an implicit/exclusive grant needs) is returned as an
 // APERTURE_* coded error and the caller treats it as a non-result.
 func (e *Engine) Enumerate(ctx context.Context, req EnumerateRequest) ([]string, error) {
@@ -188,7 +196,7 @@ func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest
 			"engine: failed to load grants for subjects", err)
 	}
 
-	limit := boundEnumerateLimit(req.Limit)
+	limit := e.boundEnumerateLimit(req.Limit)
 	permCache := make(map[string]*model.Permission, len(grants))
 
 	// The decision context reused per candidate. Object is filled per candidate.
@@ -316,10 +324,14 @@ func (e *Engine) matchesFields(ctx context.Context, obj identity.Identity, field
 	return provider.MatchFields(md, fields), nil
 }
 
-// boundEnumerateLimit normalises a caller limit to a positive bound.
-func boundEnumerateLimit(limit int) int {
-	if limit <= 0 || limit > DefaultEnumerateLimit {
-		return DefaultEnumerateLimit
+// boundEnumerateLimit normalises a caller limit against the bound this engine was
+// CONFIGURED with (WithEnumerateLimit), not against the package constant: a
+// non-positive request limit yields the configured bound, and a larger one is
+// clamped down to it.
+func (e *Engine) boundEnumerateLimit(limit int) int {
+	bound := e.enumerateBound()
+	if limit <= 0 || limit > bound {
+		return bound
 	}
 	return limit
 }
