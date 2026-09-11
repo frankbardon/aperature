@@ -81,10 +81,18 @@ import (
 //
 //	2 348 ns/eval, 17 allocs/eval, ~1 297 B/eval
 //
-// The whole table — the untouched RuleEval row included — sits roughly 40% above
-// the figures committed when these benchmarks first landed (4 195 ns/candidate,
-// 1 235 ns/eval). Every row moved together, so read the table's INTERNAL ratios,
-// which is what it is for; the absolute numbers are one machine on one day.
+// Those absolutes are one machine on one day, and that day was loaded: the same
+// RuleEval benchmark re-run on the same machine while quiet measured 1 500
+// ns/eval, against 2 348 here and 1 235 when these benchmarks first landed. Read
+// the table's INTERNAL ratios, which is what it is for.
+//
+// The allocation counters do not move with load, and those did change: 14 -> 17
+// allocs/eval, ~976 -> ~1 296 B/eval. All of it is the principal and account
+// FLOOR BAGS, added in attribute-providers (232e123, eba23be) and built once per
+// evaluation in rules/engine.go. The per-evaluation copy is the security
+// property — a resolver bag may be cached and shared and is read-only, so the
+// floor is stamped into a copy, never into it. Three allocations is the price.
+// There is no unexplained drift here to chase.
 //
 // Read five things off it:
 //
@@ -551,10 +559,10 @@ func enumerateIDs(t *testing.T, m enumerateModel) []string {
 // here: a 2 000-id rule-backed enumeration is ~11.6 ms BY DESIGN — it is ~4 000
 // rule evaluations plus 2 000 decisions — so a 1 ms ceiling could never pass, and
 // any absolute ceiling large enough to pass would have to be pinned to one
-// machine on one day. E3-S1 measured exactly that hazard: the whole committed
-// table, including rows this effort never touched, sits ~40% above the figures
-// first published, and the candidates-4000/bound-2000 row alone ranged
-// 11.21–16.31 ms (1.45x) across a single -count=3 run. An absolute ceiling on an
+// machine on one day. E3-S1 measured exactly that hazard: the
+// candidates-4000/bound-2000 row alone ranged 11.21–16.31 ms (1.45x) across a
+// single -count=3 run, and RuleEval measured 2 348 ns/eval loaded against 1 500
+// quiet on the same machine. An absolute ceiling on an
 // 11.6 ms operation measured on a machine that swings 1.45x is the design most
 // likely to flake, and re-tuning it would become a recurring chore that
 // eventually gets loosened into a tautology.
@@ -593,9 +601,10 @@ func enumerateIDs(t *testing.T, m enumerateModel) []string {
 // configured path would show up there and nowhere else.
 //
 // WHAT IT DELIBERATELY DOES NOT CATCH: a uniform slowdown that hits both arms
-// equally — by construction, that divides out. The ~40% baseline drift above is
-// precisely that shape, and it is a BenchmarkEnumerateRuleBacked question, not a
-// gate question; asserting it would make the gate a machine detector. The
+// equally — by construction, that divides out. A machine-wide slowdown is
+// precisely that shape, and so is a uniform per-evaluation cost like the floor
+// bags above; both are BenchmarkEnumerateRuleBacked questions, not gate
+// questions. Asserting them here would make the gate a machine detector. The
 // decisions/sec floor below is what keeps a catastrophic uniform regression from
 // passing unnoticed, and it reuses the committed throughputMin rather than
 // inventing a number.

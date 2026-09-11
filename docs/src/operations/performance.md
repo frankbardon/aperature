@@ -206,9 +206,12 @@ Four things to take from it:
   objects are never visited. The worst case stays a constant a host can budget
   for — it is simply a constant the operator now chooses.
 
-**Read the ratios, not the absolutes.** The whole committed table sits roughly
-40 % above the figures first recorded for these benchmarks; every row moved
-together, the drift is uniform, and it predates the configurable bound. Treat the
+**Read the ratios, not the absolutes.** Wall-clock figures here move with
+whatever else the measuring machine is doing — the same benchmark measured 2 348
+ns/eval on a loaded machine and 1 500 ns/eval on a quiet one. (The one durable
+change since these were first recorded is ~3 extra allocations per rule
+evaluation, added deliberately in 2026-08 for the attribute floor bags; the
+repository's `docs/benchmarks.md` accounts for it.) Treat the
 per-id figures as a shape to size a deployment with, not as a performance promise
 for your hardware — and measure your own with `make bench` before committing to a
 number. The full methodology and the rest of the sweep are in the repository file

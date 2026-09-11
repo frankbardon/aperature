@@ -523,10 +523,31 @@ clamp → scope member gather → provider list.
 And the rule half in isolation (`BenchmarkEnumerateRuleBackedRuleEval`, 1 000
 `Selected` calls), same run: **2 348 ns/eval, 17 allocs/eval, ~1 297 B/eval**.
 
-The whole table — the untouched `RuleEval` row included — sits roughly 40% above
-the figures first committed here (4 195 ns/candidate, 1 235 ns/eval). Every row
-moved together, so read the **internal ratios**; the absolute numbers are one
-machine on one day.
+Those absolutes are one machine on one day, and that day was a noisy one: the
+same `RuleEval` benchmark re-run later on the same quiet machine measured **1 500
+ns/eval**, against **2 348** above and **1 235** when these figures were first
+committed. Timing here tracks whatever else the machine is doing, so read the
+**internal ratios** between rows rather than the wall-clock numbers.
+
+The allocation counters do not drift — they are deterministic, and they did move:
+**14 → 17 allocs/eval, ~976 → ~1 296 B/eval**. That growth is fully accounted
+for. Bisecting the merges since it was measured puts all of it in
+`attribute-providers` (PR #17), in two commits: `232e123` (E1-S3) added one
+allocation, and `eba23be` (E2-S1) added two more and ~304 B. They are the
+`principal` and `account` **floor bags**, built per evaluation in
+`rules/engine.go` — `make(map[string]any, len(bag)+2)` plus a `maps.Copy`, once
+each.
+
+That per-evaluation copy is the security property, not an oversight. A resolver's
+bag may be cached and shared across a tenancy and is read-only, so the floor is
+stamped into a **copy** of it and never into it. If a host bag could shadow `id`,
+`principal.id == object.owner` would silently compare something else, with no
+error anywhere — see "The floor bags, and why the floor wins" in
+`skills/attribute-providers.md`. Three allocations is what that costs.
+
+So: the rule-evaluation path really did get ~21% more allocations and ~33% more
+transient bytes on 2026-08-26, deliberately and for a stated reason. There is no
+unexplained drift to chase.
 
 - **~5.7–6.3 µs and ~56 allocations per returned id**, flat across three orders
   of magnitude *and* across both bounds — linear in the result size, with no
@@ -601,11 +622,12 @@ measures the raised bound only in its variable names.
 
 **The threshold is a ratio, not a wall clock**, and that is the whole design.
 A 2 000-id rule-backed enumeration is ~11.6 ms *by design*, so neither `p99Ceiling`
-(1 ms) nor a re-tuned absolute number transfers: the table above already sits ~40 %
-above its first-committed figures, and the `candidates-4000/bound-2000` row alone
-ranged 11.21–16.31 ms (1.45×) inside a single `-count=3` run. A ratio divides
-machine speed and baseline drift out entirely, because both arms are measured on
-the same machine in the same second.
+(1 ms) nor a re-tuned absolute number transfers. Wall-clock here moves with
+whatever else the machine is doing: the `candidates-4000/bound-2000` row alone
+ranged 11.21–16.31 ms (1.45×) inside a single `-count=3` run, and the `RuleEval`
+row measured 2 348 ns/eval on a loaded machine against 1 500 on a quiet one. A
+ratio divides machine speed out entirely, because both arms are measured on the
+same machine in the same second.
 
 The ratio asserted is **per-candidate cost at the raised bound ÷ per-candidate cost
 at the default bound ≤ 1.5×**, derived from the table above (denominator: the
@@ -632,8 +654,10 @@ catches the shape specific to the configurable bound: configuring a ceiling a
 deployment never reaches must cost nothing.
 
 **What it deliberately does not catch:** a uniform slowdown hitting both arms
-equally — by construction, that divides out. The ~40 % drift above is exactly that
-shape, and it is a benchmark question, not a gate question. The blind spot is
+equally — by construction, that divides out. A machine-wide slowdown is exactly
+that shape, and it is a benchmark question, not a gate question. So is a uniform
+per-evaluation cost like the floor-bag allocations above: real, deliberate, and
+invisible to a ratio. The blind spot is
 covered by a second assertion that introduces **no new constant**: an `Enumerate`
 makes one authorization decision per returned id, so the arms are additionally
 held to the committed `throughputMin` as decisions/sec (they measure ~180–230 k,
