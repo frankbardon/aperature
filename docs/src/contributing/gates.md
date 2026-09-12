@@ -14,7 +14,7 @@ below.
 | `make test` | `go test ./...` | The full unit/integration suite. Does **not** include the NFR benchmark gate (see below). |
 | `make fmt` | `go fmt ./...` | Formats the tree. |
 | `make vet` | `go vet ./...` | Standard vet checks. |
-| `make lint` | `go vet` + a static analyser | Runs `staticcheck` if present, else `golangci-lint`, else prints a notice and runs vet only. CI installs `staticcheck` explicitly, so lint is real in CI even though it degrades locally. |
+| `make lint` | `go vet` + a static analyser | Runs `staticcheck` if present, else `golangci-lint`, else prints a notice and runs vet only. A `golangci-lint` that cannot start (exit 3 — typically built with an older Go than this module targets) degrades the same way rather than hard-failing, with a loud notice that static analysis did **not** run; a real finding (exit 1) still fails the target. CI installs `staticcheck` explicitly, so lint is real in CI even though it degrades locally. |
 
 A minimal pre-PR loop:
 

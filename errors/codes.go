@@ -451,6 +451,7 @@ var Registry = map[Code]Metadata{
 			"Register an ObjectProvider for the object type before fetching its metadata.",
 			"Confirm the object identity's terminal segment type matches a registered provider key.",
 			"Filtering an enumeration by metadata fields? Build the engine with engine.WithMetadata(registry) — the same provider registry the scope lister uses — or drop the field predicates.",
+			"Searching object metadata by name? Search ALWAYS needs engine.WithMetadata(registry); unlike a field predicate it is not optional, and an empty result would read as \"no access\" rather than as the misconfiguration it is.",
 		},
 	},
 	APERTURE_PROVIDER_FETCH: {

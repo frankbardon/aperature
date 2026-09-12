@@ -34,8 +34,8 @@ the UI (E6) all build on.
 
 Full surface:
 
-- **Decisions** (read): `Check`, `Enumerate`, `Explain` + `CheckBatch`,
-  `EnumerateBatch`, `ExplainBatch`. Fail-closed (an operational error folds to a
+- **Decisions** (read): `Check`, `Enumerate`, `Search`, `Explain` + `CheckBatch`,
+  `EnumerateBatch`, `SearchBatch`, `ExplainBatch`. Fail-closed (an operational error folds to a
   deny; only input-validation is returned). `EnumerateQuery` additionally carries
   the OPTIONAL metadata filter — see [the enumerate metadata
   filter](#the-enumerate-metadata-filter) — and a `Limit` that **every** surface
@@ -44,6 +44,23 @@ Full surface:
   the engine, so a `limit` above it is clamped **down** with nothing in the
   response saying so. No surface owns or restates that policy; see
   `skills/decision-api.md`.
+- **Object search** (read): `Search(SearchQuery) -> []SearchMatch` and
+  `SearchBatch`. Resolves a NAME to an id: the objects `Enumerate` would return,
+  ranked by how well their metadata matches free text. Candidates are DECIDED
+  before they are scored (it walks the enumerate pipeline), so the result is
+  always a SUBSET of `Enumerate`'s — a score can only subtract. `SearchQuery`
+  carries `Query` (required), `MatchFields` (which metadata fields to match
+  against), `MinScore`, and the same OPTIONAL `Fields` / `References` /
+  `Limit` `EnumerateQuery` carries, with `Limit` capping the finished RANKING
+  rather than the scan. Each match carries the object's metadata inline, so
+  labelling a result set costs no further call. Requires `engine.WithMetadata`
+  (else `APERTURE_PROVIDER_UNREGISTERED` — never an empty result). Search
+  SELECTS; it never authorizes. See `skills/object-search.md`.
+- **Object metadata** (read): `ObjectMetadata(objectID)` and
+  `ObjectMetadataBatch(objectIDs)` — the single and bulk forms of one provider
+  metadata read, the batch aligned by index with one bad id carrying its own
+  error. Both require `WithProviders`. Neither authorizes or filters: they label
+  ids a caller already holds.
 - **Audit query** (read): `QueryAudit(AuditFilter)` returns the append-only audit
   events matching the filter (actor, account, event type, outcome, since/until,
   limit), newest-first, each as canonical JSON. It is a GATED read — a
@@ -307,6 +324,50 @@ reflected schema, exactly as it is for `Fields`. Without it an edge-less
 `aperture_enumerate` — by far the common call — is unrepresentable for a
 schema-validating client. `HolderID` and `Field` are required properties;
 `HolderType` is not.
+
+## The object search
+
+`SearchQuery` is `EnumerateQuery` plus a name. Everything the enumerate filter
+and the reference edge say about carrying values UNCHANGED across a surface
+applies here verbatim, and one thing more: **no surface normalises the query
+text**. Folding case, stripping punctuation and tokenising all happen in exactly
+one place (`provider.NormalizeText`, reached through `provider.MatchText`), so a
+name typed at the CLI, sent over MCP, and passed in Go all score identically.
+
+Three properties every surface must preserve:
+
+- **`Query` is REQUIRED.** An empty query is `APERTURE_INVALID_INPUT`, not
+  "match everything" — what it would return is the subject's whole entitled set,
+  unranked, which is the bulk read this surface replaces. In the MCP schema that
+  means `Query` carries a `json:"Query"` tag WITHOUT `omitempty`, while
+  `MatchFields` / `Fields` / `References` / `MinScore` / `Limit` all carry it, so
+  the reflected schema marks exactly one of them required.
+- **A score is not a permission.** The MCP tool description says so in those
+  words, because an agent has no other source of truth and the failure mode —
+  acting on a high-scoring id without checking it — is invisible.
+- **The containment holds per surface.** `Search` ⊆ `Enumerate` is asserted in
+  `engine`, `service` AND `mcp` rather than once, for the same reason the
+  enumerate reference edge's empty-vs-`NOT_FOUND` split is: a relaxation in one
+  place is a silent disclosure channel.
+
+`MatchFields` is spelled as a separate field from `Fields` — and as `--in`
+rather than `--field` on the CLI — because the two say different things.
+`MatchFields` says WHERE to look; `Fields` says WHAT to find. Conflating them
+would let a caller think a search had been narrowed when it had only been
+filtered.
+
+| Surface | Spelling |
+|---|---|
+| Twirp (`service.proto`) | `SearchRequest` → `SearchResponse` (`Search`), `SearchBatchRequest` → `SearchBatchResponse` (`SearchBatch`). `query` is field 5; `match_fields` 6; `fields` 7 and `references` 8 reuse the enumerate encodings verbatim, decoded by the same `rpc.FieldsFromWire` / `referenceEdges` converters so a predicate cannot mean one thing on `Enumerate` and another on `Search`. `SearchMatch.metadata` goes back out through `rpc.FieldsToWire` |
+| CLI | `aperture search <principal> <action> <pattern> <query>`; `--in` for `MatchFields`, `--min-score`, `--limit`, `--scores` |
+| MCP | `aperture_search` / `aperture_search_batch`, schema reflected off `service.SearchQuery` |
+
+A match whose metadata fails to encode fails the CALL rather than coming back
+with an empty `metadata` map: a client cannot distinguish an object with
+genuinely empty metadata from one whose bag failed to encode, so the second must
+not be able to masquerade as the first. In the batch form the same failure rides
+in that item's error slot and clears its matches — a query that never ran must
+never read as "nothing by that name".
 
 ## Auth + admin-tier policy
 

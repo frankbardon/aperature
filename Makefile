@@ -95,11 +95,35 @@ vendor-rete:
 # lint runs go vet plus a static analyser when one is available. In a clean
 # environment without staticcheck / golangci-lint on PATH the target degrades to
 # a notice so `make lint` never hard-fails; CI installs staticcheck explicitly.
+#
+# "Available" has to mean USABLE, not merely present. The presence test alone
+# left one gap wide open: a golangci-lint on PATH that was built with an older
+# Go than this module targets refuses to start at all, so the target hard-failed
+# in exactly the environment it was written to degrade in — and the failure
+# looks like a lint error, which is how it earns a shrug and a "pre-existing"
+# label instead of a fix.
+#
+# golangci-lint separates the two cases by exit code: 1 means it ran and found
+# issues (a real failure, propagated), 3 means it could not run at all. Only 3
+# degrades, and it degrades LOUDLY — the point of the notice is that nobody
+# should be able to read this target's output and think static analysis ran.
 lint: vet
 	@if command -v staticcheck >/dev/null 2>&1; then \
 		staticcheck ./...; \
 	elif command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
+		golangci-lint run; status=$$?; \
+		if [ $$status -eq 3 ]; then \
+			echo ""; \
+			echo "lint: golangci-lint could not run (exit 3) — see its error above."; \
+			echo "lint: the usual cause is a golangci-lint built with an older Go than this"; \
+			echo "lint: module targets; it refuses to start rather than reporting findings."; \
+			echo "lint: *** go vet passed, but STATIC ANALYSIS DID NOT RUN. ***"; \
+			echo "lint: fix it with either of:"; \
+			echo "lint:   go install honnef.co/go/tools/cmd/staticcheck@latest   (what CI uses)"; \
+			echo "lint:   upgrade golangci-lint to a build matching this module's Go version"; \
+		elif [ $$status -ne 0 ]; then \
+			exit $$status; \
+		fi; \
 	else \
 		echo "lint: no staticcheck/golangci-lint on PATH; ran go vet only (skipping static analysis)"; \
 	fi

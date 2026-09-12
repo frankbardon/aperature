@@ -19,7 +19,7 @@ story, but these surfaces exist today rather than being future work.
 make build   # produce bin/aperture
 make test    # run unit tests
 make vet     # go vet
-make lint    # vet + staticcheck (degrades gracefully if not installed)
+make lint    # vet + staticcheck (degrades gracefully when no usable analyser is installed)
 ```
 
 ## Documentation

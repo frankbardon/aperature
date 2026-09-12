@@ -49,6 +49,8 @@ and always answer fail-closed.
 | `CheckBatch` | `CheckBatchRequest` → `CheckBatchResponse` | Many `Check`s in one call; results are index-aligned, each either a `Decision` or a per-item error code+message. |
 | `Enumerate` | `EnumerateRequest` → `EnumerateResponse` | Which object ids matching `pattern` may `principal` take `action` on? Optional `fields` (an object-metadata filter, below), optional `references` (reference edges, below) and `limit`. |
 | `EnumerateBatch` | `EnumerateBatchRequest` → `EnumerateBatchResponse` | Batched `Enumerate`; index-aligned results. Each query embeds an `EnumerateRequest`, so `fields` and `references` are per-query. |
+| `Search` | `SearchRequest` → `SearchResponse` | Which of the objects `Enumerate` would return are the ones a person means by `query`? Ranked best first, each match carrying its score, the field and value that matched, and the object's full metadata. Optional `match_fields`, `fields`, `references`, `min_score`, `limit`. |
+| `SearchBatch` | `SearchBatchRequest` → `SearchBatchResponse` | Batched `Search`; index-aligned results. Each query embeds a `SearchRequest`, so every option is per-query. |
 | `Explain` | `CheckRequest` → `ExplainResponse` | The full decision derivation for a query, as `trace_json` (the recursive engine `Trace`, not modelled in proto). |
 | `ExplainBatch` | `CheckBatchRequest` → `ExplainBatchResponse` | Batched `Explain`; index-aligned `trace_json` or per-item error. |
 
@@ -61,6 +63,62 @@ curl -s -X POST http://localhost:8080/twirp/aperture.ApertureService/Enumerate \
 ```json
 { "object_ids": ["doc:42", "doc:77"] }
 ```
+
+### `SearchRequest` — resolving a name to an id
+
+`Search` is the call to make when a question arrives in a person's own words and
+every step after it needs ids.
+
+```bash
+curl -s -X POST http://localhost:8080/twirp/aperture.ApertureService/Search \
+  -H 'Content-Type: application/json' \
+  -d '{"account":"acme","principal":"alice","action":"read",
+       "pattern":"account:acme/brand:*","query":"nike","limit":5}'
+```
+
+```json
+{ "matches": [
+    { "object": "account:acme/brand:42", "score": 0.875,
+      "field": "label", "value": "Nike, Inc.",
+      "metadata": { "label": "Nike, Inc.", "sector": "Footwear" } }
+] }
+```
+
+**The result is already scoped — do not filter it client-side.** Candidates are
+*decided before they are scored*, by the same walk `Enumerate` uses, so the
+matches are always a subset of what `Enumerate` would return for the same
+`account`, `principal`, `action` and `pattern`. The alternative shape — enumerate
+a type over the wire, then match in your client — puts the *unscoped* set across
+the boundary first and narrows it second, and any bug in that client-side filter
+turns your surface into an enumeration oracle for every object in the system.
+
+**A score ranks; it never authorizes.** Nothing in Aperture reads one. A client
+that acts on a returned id still calls `Check`.
+
+| Field | Meaning |
+|---|---|
+| `query` | The free text. **Required** — an empty query is `invalid_argument` (`APERTURE_INVALID_INPUT`), not "match everything". For the whole entitled set, call `Enumerate`. |
+| `match_fields` | Metadata field names to restrict matching to. Omit to search every field holding text. Aperture has no notion of a "label" — a label is an ordinary field whose name *you* chose. |
+| `fields` | The object-metadata filter, identical in meaning and encoding to `EnumerateRequest.fields` (below). It **composes**: the predicate narrows, the query ranks. |
+| `references` | Reference edges, identical to `EnumerateRequest.references` (below), with the same fail-closed rules. |
+| `min_score` | The score floor in `[0,1]`; `<= 0` means the engine default. Raising it narrows the shortlist and never widens what the subject may see. |
+| `limit` | Caps the returned **matches** — the top of a finished ranking, not a bound on the scan, so you get the best N rather than the first N found. |
+
+Matching is case- and punctuation-insensitive (`Nike, Inc.` matches `nike inc`)
+and tolerates a typo or transposition. Only text is matched — a string field and
+the string elements of a list field; match a number, bool or date through
+`fields` instead.
+
+Each match's `metadata` is the object's full bag, encoded exactly like
+`EnumerateRequest.fields` and carrying the same caveat: a
+`google.protobuf.Value` holds a number as a double, so an integer beyond 2^53
+loses precision in transit. It rides along so labelling a result set costs no
+further round-trip.
+
+`Search` **requires** the deployment to have an object-metadata source wired.
+Without one the answer is `APERTURE_PROVIDER_UNREGISTERED`, never an empty
+`matches` list — an empty list reads as "you may see nothing" and would hide the
+misconfiguration.
 
 ### `EnumerateRequest.fields` — the object-metadata filter
 

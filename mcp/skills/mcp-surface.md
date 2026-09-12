@@ -1,6 +1,6 @@
 ---
 name: mcp-surface
-description: Aperture's read-only MCP surface — the decide, simulate, and inspect tools an agent drives over stdio, what an explain/simulate trace discloses about a principal's and an account's attribute bags (values included, via the ExplainOut = engine.Trace alias) and why there is no attribute-directory tool, with the SDK-free-core + gosdk-adapter + import-firewall house pattern that keeps the protocol SDK out of the core.
+description: Aperture's read-only MCP surface — the decide, search, simulate, and inspect tools an agent drives over stdio, including name-to-id resolution whose results are already entitlement-scoped and whose scores rank but never authorize, what an explain/simulate trace discloses about a principal's and an account's attribute bags (values included, via the ExplainOut = engine.Trace alias) and why there is no attribute-directory tool, with the SDK-free-core + gosdk-adapter + import-firewall house pattern that keeps the protocol SDK out of the core.
 applies_to: [mcp, service, engine, what-if]
 ---
 
@@ -47,6 +47,38 @@ gets the same verdict as every other surface — and a filtered
   for that question rather than that access was denied.
 - `aperture_enumerate_batch` — bulk enumerate, aligned with queries; each query
   carries its own `Fields` and `References`.
+- `aperture_search` — resolve a NAME to an object id. Ranks the objects a
+  principal may act on by how well their metadata matches free text, best first.
+  This is the tool for a question that arrives in a person's words ("what is
+  Nike's score?") where every step after it needs an id.
+
+  Three things to hold onto:
+
+  1. **A score is not a permission.** It ranks candidates so you can pick one or
+     ask the user which they meant. Still `aperture_check` an id before acting on
+     it, and never present a high score as authorization.
+  2. **The result is already scoped.** Candidates are DECIDED before they are
+     scored, by the same walk `aperture_enumerate` uses, so what comes back is
+     always a SUBSET of what `aperture_enumerate` would return for the same
+     subject, action and pattern. You never need to filter it afterwards, and an
+     object missing from it is an object this principal may not see — not a
+     matching failure to work around by enumerating and filtering yourself.
+  3. **`Query` is required.** There is no "match everything" — for the whole
+     entitled set, use `aperture_enumerate`.
+
+  Matching is case- and punctuation-insensitive ("Nike, Inc." matches "nike inc")
+  and tolerates a typo or a transposition. Only TEXT is matched; match a number,
+  bool or date through `Fields` instead. Aperture has no notion of a "label" —
+  every field holding text is searched unless `MatchFields` names some, and each
+  match reports the `Field` and `Value` that produced it, so you can tell a hit
+  on an alias from a hit on a display name. `Fields` and `References` mean what
+  they mean on `aperture_enumerate` and COMPOSE with the query: the predicate and
+  the edge narrow, the query ranks. `MinScore` drops weak matches; `Limit` caps
+  the returned MATCHES (the best N, not the first N found). Each match carries
+  the object's full `Metadata` inline, so do NOT follow up with a per-id metadata
+  read to label what you found.
+- `aperture_search_batch` — bulk search, aligned with queries; use it when one
+  sentence names several things (a brand and a category).
 - `aperture_explain` — the full decision trace: subject set, every grant
   considered with its per-grant outcome, the deciding grants, the verdict.
 - `aperture_explain_batch` — bulk explain, aligned with queries.

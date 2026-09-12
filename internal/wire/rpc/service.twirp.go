@@ -55,6 +55,10 @@ type ApertureService interface {
 
 	EnumerateBatch(context.Context, *EnumerateBatchRequest) (*EnumerateBatchResponse, error)
 
+	Search(context.Context, *SearchRequest) (*SearchResponse, error)
+
+	SearchBatch(context.Context, *SearchBatchRequest) (*SearchBatchResponse, error)
+
 	Explain(context.Context, *CheckRequest) (*ExplainResponse, error)
 
 	ExplainBatch(context.Context, *CheckBatchRequest) (*ExplainBatchResponse, error)
@@ -233,7 +237,7 @@ type ApertureService interface {
 
 type apertureServiceProtobufClient struct {
 	client      HTTPClient
-	urls        [60]string
+	urls        [62]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -261,11 +265,13 @@ func NewApertureServiceProtobufClient(baseURL string, client HTTPClient, opts ..
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "aperture", "ApertureService")
-	urls := [60]string{
+	urls := [62]string{
 		serviceURL + "Check",
 		serviceURL + "CheckBatch",
 		serviceURL + "Enumerate",
 		serviceURL + "EnumerateBatch",
+		serviceURL + "Search",
+		serviceURL + "SearchBatch",
 		serviceURL + "Explain",
 		serviceURL + "ExplainBatch",
 		serviceURL + "Capabilities",
@@ -516,6 +522,98 @@ func (c *apertureServiceProtobufClient) callEnumerateBatch(ctx context.Context, 
 	return out, nil
 }
 
+func (c *apertureServiceProtobufClient) Search(ctx context.Context, in *SearchRequest) (*SearchResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "aperture")
+	ctx = ctxsetters.WithServiceName(ctx, "ApertureService")
+	ctx = ctxsetters.WithMethodName(ctx, "Search")
+	caller := c.callSearch
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *SearchRequest) (*SearchResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*SearchRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*SearchRequest) when calling interceptor")
+					}
+					return c.callSearch(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SearchResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SearchResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *apertureServiceProtobufClient) callSearch(ctx context.Context, in *SearchRequest) (*SearchResponse, error) {
+	out := new(SearchResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[4], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *apertureServiceProtobufClient) SearchBatch(ctx context.Context, in *SearchBatchRequest) (*SearchBatchResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "aperture")
+	ctx = ctxsetters.WithServiceName(ctx, "ApertureService")
+	ctx = ctxsetters.WithMethodName(ctx, "SearchBatch")
+	caller := c.callSearchBatch
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *SearchBatchRequest) (*SearchBatchResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*SearchBatchRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*SearchBatchRequest) when calling interceptor")
+					}
+					return c.callSearchBatch(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SearchBatchResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SearchBatchResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *apertureServiceProtobufClient) callSearchBatch(ctx context.Context, in *SearchBatchRequest) (*SearchBatchResponse, error) {
+	out := new(SearchBatchResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 func (c *apertureServiceProtobufClient) Explain(ctx context.Context, in *CheckRequest) (*ExplainResponse, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "aperture")
 	ctx = ctxsetters.WithServiceName(ctx, "ApertureService")
@@ -547,7 +645,7 @@ func (c *apertureServiceProtobufClient) Explain(ctx context.Context, in *CheckRe
 
 func (c *apertureServiceProtobufClient) callExplain(ctx context.Context, in *CheckRequest) (*ExplainResponse, error) {
 	out := new(ExplainResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[4], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -593,7 +691,7 @@ func (c *apertureServiceProtobufClient) ExplainBatch(ctx context.Context, in *Ch
 
 func (c *apertureServiceProtobufClient) callExplainBatch(ctx context.Context, in *CheckBatchRequest) (*ExplainBatchResponse, error) {
 	out := new(ExplainBatchResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -639,7 +737,7 @@ func (c *apertureServiceProtobufClient) Capabilities(ctx context.Context, in *Em
 
 func (c *apertureServiceProtobufClient) callCapabilities(ctx context.Context, in *Empty) (*CapabilitiesResponse, error) {
 	out := new(CapabilitiesResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -685,7 +783,7 @@ func (c *apertureServiceProtobufClient) PutObjectType(ctx context.Context, in *E
 
 func (c *apertureServiceProtobufClient) callPutObjectType(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[9], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -731,7 +829,7 @@ func (c *apertureServiceProtobufClient) GetObjectType(ctx context.Context, in *G
 
 func (c *apertureServiceProtobufClient) callGetObjectType(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[10], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -777,7 +875,7 @@ func (c *apertureServiceProtobufClient) ListObjectTypes(ctx context.Context, in 
 
 func (c *apertureServiceProtobufClient) callListObjectTypes(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[9], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[11], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -823,7 +921,7 @@ func (c *apertureServiceProtobufClient) DeleteObjectType(ctx context.Context, in
 
 func (c *apertureServiceProtobufClient) callDeleteObjectType(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[10], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[12], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -869,7 +967,7 @@ func (c *apertureServiceProtobufClient) ObjectIdentifiers(ctx context.Context, i
 
 func (c *apertureServiceProtobufClient) callObjectIdentifiers(ctx context.Context, in *ObjectIdentifiersRequest) (*ObjectIdentifiersResponse, error) {
 	out := new(ObjectIdentifiersResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[11], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[13], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -915,7 +1013,7 @@ func (c *apertureServiceProtobufClient) PutPermission(ctx context.Context, in *E
 
 func (c *apertureServiceProtobufClient) callPutPermission(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[12], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[14], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -961,7 +1059,7 @@ func (c *apertureServiceProtobufClient) GetPermission(ctx context.Context, in *G
 
 func (c *apertureServiceProtobufClient) callGetPermission(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[13], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[15], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1007,7 +1105,7 @@ func (c *apertureServiceProtobufClient) ListPermissions(ctx context.Context, in 
 
 func (c *apertureServiceProtobufClient) callListPermissions(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[14], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1053,7 +1151,7 @@ func (c *apertureServiceProtobufClient) DeletePermission(ctx context.Context, in
 
 func (c *apertureServiceProtobufClient) callDeletePermission(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[15], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1099,7 +1197,7 @@ func (c *apertureServiceProtobufClient) PutPrincipal(ctx context.Context, in *En
 
 func (c *apertureServiceProtobufClient) callPutPrincipal(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1145,7 +1243,7 @@ func (c *apertureServiceProtobufClient) GetPrincipal(ctx context.Context, in *Ge
 
 func (c *apertureServiceProtobufClient) callGetPrincipal(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1191,7 +1289,7 @@ func (c *apertureServiceProtobufClient) ListPrincipals(ctx context.Context, in *
 
 func (c *apertureServiceProtobufClient) callListPrincipals(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1237,7 +1335,7 @@ func (c *apertureServiceProtobufClient) DeletePrincipal(ctx context.Context, in 
 
 func (c *apertureServiceProtobufClient) callDeletePrincipal(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1283,7 +1381,7 @@ func (c *apertureServiceProtobufClient) PutRole(ctx context.Context, in *EntityR
 
 func (c *apertureServiceProtobufClient) callPutRole(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1329,7 +1427,7 @@ func (c *apertureServiceProtobufClient) GetRole(ctx context.Context, in *GetRequ
 
 func (c *apertureServiceProtobufClient) callGetRole(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1375,7 +1473,7 @@ func (c *apertureServiceProtobufClient) ListRoles(ctx context.Context, in *ListR
 
 func (c *apertureServiceProtobufClient) callListRoles(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1421,7 +1519,7 @@ func (c *apertureServiceProtobufClient) DeleteRole(ctx context.Context, in *Dele
 
 func (c *apertureServiceProtobufClient) callDeleteRole(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1467,7 +1565,7 @@ func (c *apertureServiceProtobufClient) PutGroup(ctx context.Context, in *Entity
 
 func (c *apertureServiceProtobufClient) callPutGroup(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1513,7 +1611,7 @@ func (c *apertureServiceProtobufClient) GetGroup(ctx context.Context, in *GetReq
 
 func (c *apertureServiceProtobufClient) callGetGroup(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1559,7 +1657,7 @@ func (c *apertureServiceProtobufClient) ListGroups(ctx context.Context, in *List
 
 func (c *apertureServiceProtobufClient) callListGroups(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1605,7 +1703,7 @@ func (c *apertureServiceProtobufClient) DeleteGroup(ctx context.Context, in *Del
 
 func (c *apertureServiceProtobufClient) callDeleteGroup(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1651,7 +1749,7 @@ func (c *apertureServiceProtobufClient) PutAccount(ctx context.Context, in *Enti
 
 func (c *apertureServiceProtobufClient) callPutAccount(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1697,7 +1795,7 @@ func (c *apertureServiceProtobufClient) GetAccount(ctx context.Context, in *GetR
 
 func (c *apertureServiceProtobufClient) callGetAccount(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1743,7 +1841,7 @@ func (c *apertureServiceProtobufClient) ListAccounts(ctx context.Context, in *Li
 
 func (c *apertureServiceProtobufClient) callListAccounts(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1789,7 +1887,7 @@ func (c *apertureServiceProtobufClient) DeleteAccount(ctx context.Context, in *D
 
 func (c *apertureServiceProtobufClient) callDeleteAccount(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1835,7 +1933,7 @@ func (c *apertureServiceProtobufClient) PutRule(ctx context.Context, in *RuleReq
 
 func (c *apertureServiceProtobufClient) callPutRule(ctx context.Context, in *RuleRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1881,7 +1979,7 @@ func (c *apertureServiceProtobufClient) GetRule(ctx context.Context, in *GetRequ
 
 func (c *apertureServiceProtobufClient) callGetRule(ctx context.Context, in *GetRequest) (*RuleResponse, error) {
 	out := new(RuleResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[35], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1927,7 +2025,7 @@ func (c *apertureServiceProtobufClient) ListRules(ctx context.Context, in *Empty
 
 func (c *apertureServiceProtobufClient) callListRules(ctx context.Context, in *Empty) (*RuleListResponse, error) {
 	out := new(RuleListResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[36], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1973,7 +2071,7 @@ func (c *apertureServiceProtobufClient) DeleteRule(ctx context.Context, in *Dele
 
 func (c *apertureServiceProtobufClient) callDeleteRule(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[35], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[37], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2019,7 +2117,7 @@ func (c *apertureServiceProtobufClient) ValidateRule(ctx context.Context, in *Ru
 
 func (c *apertureServiceProtobufClient) callValidateRule(ctx context.Context, in *RuleRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[36], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[38], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2065,7 +2163,7 @@ func (c *apertureServiceProtobufClient) Simulate(ctx context.Context, in *Simula
 
 func (c *apertureServiceProtobufClient) callSimulate(ctx context.Context, in *SimulateRequest) (*Decision, error) {
 	out := new(Decision)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[37], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[39], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2111,7 +2209,7 @@ func (c *apertureServiceProtobufClient) SimulateExplain(ctx context.Context, in 
 
 func (c *apertureServiceProtobufClient) callSimulateExplain(ctx context.Context, in *SimulateRequest) (*ExplainResponse, error) {
 	out := new(ExplainResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[38], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[40], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2157,7 +2255,7 @@ func (c *apertureServiceProtobufClient) EvaluateRule(ctx context.Context, in *Ev
 
 func (c *apertureServiceProtobufClient) callEvaluateRule(ctx context.Context, in *EvaluateRuleRequest) (*EvaluateRuleResponse, error) {
 	out := new(EvaluateRuleResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[39], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[41], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2203,7 +2301,7 @@ func (c *apertureServiceProtobufClient) PutMembership(ctx context.Context, in *E
 
 func (c *apertureServiceProtobufClient) callPutMembership(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[40], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[42], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2249,7 +2347,7 @@ func (c *apertureServiceProtobufClient) DeleteMembership(ctx context.Context, in
 
 func (c *apertureServiceProtobufClient) callDeleteMembership(ctx context.Context, in *MembershipKeyRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[41], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[43], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2295,7 +2393,7 @@ func (c *apertureServiceProtobufClient) PutGrant(ctx context.Context, in *Entity
 
 func (c *apertureServiceProtobufClient) callPutGrant(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[42], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[44], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2341,7 +2439,7 @@ func (c *apertureServiceProtobufClient) GetGrant(ctx context.Context, in *GetReq
 
 func (c *apertureServiceProtobufClient) callGetGrant(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[43], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[45], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2387,7 +2485,7 @@ func (c *apertureServiceProtobufClient) ListGrants(ctx context.Context, in *List
 
 func (c *apertureServiceProtobufClient) callListGrants(ctx context.Context, in *ListGrantsRequest) (*ListGrantsResponse, error) {
 	out := new(ListGrantsResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[44], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[46], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2433,7 +2531,7 @@ func (c *apertureServiceProtobufClient) DeleteGrant(ctx context.Context, in *Del
 
 func (c *apertureServiceProtobufClient) callDeleteGrant(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[45], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[47], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2479,7 +2577,7 @@ func (c *apertureServiceProtobufClient) PutTemplate(ctx context.Context, in *Ent
 
 func (c *apertureServiceProtobufClient) callPutTemplate(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[46], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[48], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2525,7 +2623,7 @@ func (c *apertureServiceProtobufClient) GetTemplate(ctx context.Context, in *Tem
 
 func (c *apertureServiceProtobufClient) callGetTemplate(ctx context.Context, in *TemplateKeyRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[47], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[49], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2571,7 +2669,7 @@ func (c *apertureServiceProtobufClient) ListTemplates(ctx context.Context, in *L
 
 func (c *apertureServiceProtobufClient) callListTemplates(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[48], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[50], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2617,7 +2715,7 @@ func (c *apertureServiceProtobufClient) DeleteTemplate(ctx context.Context, in *
 
 func (c *apertureServiceProtobufClient) callDeleteTemplate(ctx context.Context, in *TemplateKeyRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[49], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[51], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2663,7 +2761,7 @@ func (c *apertureServiceProtobufClient) ApplyTemplate(ctx context.Context, in *A
 
 func (c *apertureServiceProtobufClient) callApplyTemplate(ctx context.Context, in *ApplyTemplateRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[50], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[52], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2709,7 +2807,7 @@ func (c *apertureServiceProtobufClient) BulkPutGrants(ctx context.Context, in *B
 
 func (c *apertureServiceProtobufClient) callBulkPutGrants(ctx context.Context, in *BulkGrantsRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[51], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[53], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2755,7 +2853,7 @@ func (c *apertureServiceProtobufClient) BulkDeleteGrants(ctx context.Context, in
 
 func (c *apertureServiceProtobufClient) callBulkDeleteGrants(ctx context.Context, in *BulkDeleteGrantsRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[52], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[54], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2801,7 +2899,7 @@ func (c *apertureServiceProtobufClient) Export(ctx context.Context, in *ExportRe
 
 func (c *apertureServiceProtobufClient) callExport(ctx context.Context, in *ExportRequest) (*ExportResponse, error) {
 	out := new(ExportResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[53], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[55], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2847,7 +2945,7 @@ func (c *apertureServiceProtobufClient) Import(ctx context.Context, in *ImportRe
 
 func (c *apertureServiceProtobufClient) callImport(ctx context.Context, in *ImportRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[54], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[56], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2893,7 +2991,7 @@ func (c *apertureServiceProtobufClient) QueryAudit(ctx context.Context, in *Quer
 
 func (c *apertureServiceProtobufClient) callQueryAudit(ctx context.Context, in *QueryAuditRequest) (*QueryAuditResponse, error) {
 	out := new(QueryAuditResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[55], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[57], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2939,7 +3037,7 @@ func (c *apertureServiceProtobufClient) Bestow(ctx context.Context, in *BestowRe
 
 func (c *apertureServiceProtobufClient) callBestow(ctx context.Context, in *BestowRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[56], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[58], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2985,7 +3083,7 @@ func (c *apertureServiceProtobufClient) Revoke(ctx context.Context, in *RevokeRe
 
 func (c *apertureServiceProtobufClient) callRevoke(ctx context.Context, in *RevokeRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[57], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[59], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3031,7 +3129,7 @@ func (c *apertureServiceProtobufClient) ImpersonationStart(ctx context.Context, 
 
 func (c *apertureServiceProtobufClient) callImpersonationStart(ctx context.Context, in *ImpersonationStartRequest) (*ImpersonationSession, error) {
 	out := new(ImpersonationSession)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[58], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[60], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3077,7 +3175,7 @@ func (c *apertureServiceProtobufClient) ImpersonationStop(ctx context.Context, i
 
 func (c *apertureServiceProtobufClient) callImpersonationStop(ctx context.Context, in *ImpersonationStopRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[59], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[61], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3098,7 +3196,7 @@ func (c *apertureServiceProtobufClient) callImpersonationStop(ctx context.Contex
 
 type apertureServiceJSONClient struct {
 	client      HTTPClient
-	urls        [60]string
+	urls        [62]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -3126,11 +3224,13 @@ func NewApertureServiceJSONClient(baseURL string, client HTTPClient, opts ...twi
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "aperture", "ApertureService")
-	urls := [60]string{
+	urls := [62]string{
 		serviceURL + "Check",
 		serviceURL + "CheckBatch",
 		serviceURL + "Enumerate",
 		serviceURL + "EnumerateBatch",
+		serviceURL + "Search",
+		serviceURL + "SearchBatch",
 		serviceURL + "Explain",
 		serviceURL + "ExplainBatch",
 		serviceURL + "Capabilities",
@@ -3381,6 +3481,98 @@ func (c *apertureServiceJSONClient) callEnumerateBatch(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *apertureServiceJSONClient) Search(ctx context.Context, in *SearchRequest) (*SearchResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "aperture")
+	ctx = ctxsetters.WithServiceName(ctx, "ApertureService")
+	ctx = ctxsetters.WithMethodName(ctx, "Search")
+	caller := c.callSearch
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *SearchRequest) (*SearchResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*SearchRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*SearchRequest) when calling interceptor")
+					}
+					return c.callSearch(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SearchResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SearchResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *apertureServiceJSONClient) callSearch(ctx context.Context, in *SearchRequest) (*SearchResponse, error) {
+	out := new(SearchResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[4], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *apertureServiceJSONClient) SearchBatch(ctx context.Context, in *SearchBatchRequest) (*SearchBatchResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "aperture")
+	ctx = ctxsetters.WithServiceName(ctx, "ApertureService")
+	ctx = ctxsetters.WithMethodName(ctx, "SearchBatch")
+	caller := c.callSearchBatch
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *SearchBatchRequest) (*SearchBatchResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*SearchBatchRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*SearchBatchRequest) when calling interceptor")
+					}
+					return c.callSearchBatch(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SearchBatchResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SearchBatchResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *apertureServiceJSONClient) callSearchBatch(ctx context.Context, in *SearchBatchRequest) (*SearchBatchResponse, error) {
+	out := new(SearchBatchResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 func (c *apertureServiceJSONClient) Explain(ctx context.Context, in *CheckRequest) (*ExplainResponse, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "aperture")
 	ctx = ctxsetters.WithServiceName(ctx, "ApertureService")
@@ -3412,7 +3604,7 @@ func (c *apertureServiceJSONClient) Explain(ctx context.Context, in *CheckReques
 
 func (c *apertureServiceJSONClient) callExplain(ctx context.Context, in *CheckRequest) (*ExplainResponse, error) {
 	out := new(ExplainResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[4], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3458,7 +3650,7 @@ func (c *apertureServiceJSONClient) ExplainBatch(ctx context.Context, in *CheckB
 
 func (c *apertureServiceJSONClient) callExplainBatch(ctx context.Context, in *CheckBatchRequest) (*ExplainBatchResponse, error) {
 	out := new(ExplainBatchResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3504,7 +3696,7 @@ func (c *apertureServiceJSONClient) Capabilities(ctx context.Context, in *Empty)
 
 func (c *apertureServiceJSONClient) callCapabilities(ctx context.Context, in *Empty) (*CapabilitiesResponse, error) {
 	out := new(CapabilitiesResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3550,7 +3742,7 @@ func (c *apertureServiceJSONClient) PutObjectType(ctx context.Context, in *Entit
 
 func (c *apertureServiceJSONClient) callPutObjectType(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[9], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3596,7 +3788,7 @@ func (c *apertureServiceJSONClient) GetObjectType(ctx context.Context, in *GetRe
 
 func (c *apertureServiceJSONClient) callGetObjectType(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[10], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3642,7 +3834,7 @@ func (c *apertureServiceJSONClient) ListObjectTypes(ctx context.Context, in *Lis
 
 func (c *apertureServiceJSONClient) callListObjectTypes(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[9], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[11], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3688,7 +3880,7 @@ func (c *apertureServiceJSONClient) DeleteObjectType(ctx context.Context, in *De
 
 func (c *apertureServiceJSONClient) callDeleteObjectType(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[10], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[12], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3734,7 +3926,7 @@ func (c *apertureServiceJSONClient) ObjectIdentifiers(ctx context.Context, in *O
 
 func (c *apertureServiceJSONClient) callObjectIdentifiers(ctx context.Context, in *ObjectIdentifiersRequest) (*ObjectIdentifiersResponse, error) {
 	out := new(ObjectIdentifiersResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[11], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[13], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3780,7 +3972,7 @@ func (c *apertureServiceJSONClient) PutPermission(ctx context.Context, in *Entit
 
 func (c *apertureServiceJSONClient) callPutPermission(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[12], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[14], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3826,7 +4018,7 @@ func (c *apertureServiceJSONClient) GetPermission(ctx context.Context, in *GetRe
 
 func (c *apertureServiceJSONClient) callGetPermission(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[13], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[15], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3872,7 +4064,7 @@ func (c *apertureServiceJSONClient) ListPermissions(ctx context.Context, in *Lis
 
 func (c *apertureServiceJSONClient) callListPermissions(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[14], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3918,7 +4110,7 @@ func (c *apertureServiceJSONClient) DeletePermission(ctx context.Context, in *De
 
 func (c *apertureServiceJSONClient) callDeletePermission(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[15], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3964,7 +4156,7 @@ func (c *apertureServiceJSONClient) PutPrincipal(ctx context.Context, in *Entity
 
 func (c *apertureServiceJSONClient) callPutPrincipal(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4010,7 +4202,7 @@ func (c *apertureServiceJSONClient) GetPrincipal(ctx context.Context, in *GetReq
 
 func (c *apertureServiceJSONClient) callGetPrincipal(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4056,7 +4248,7 @@ func (c *apertureServiceJSONClient) ListPrincipals(ctx context.Context, in *List
 
 func (c *apertureServiceJSONClient) callListPrincipals(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4102,7 +4294,7 @@ func (c *apertureServiceJSONClient) DeletePrincipal(ctx context.Context, in *Del
 
 func (c *apertureServiceJSONClient) callDeletePrincipal(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4148,7 +4340,7 @@ func (c *apertureServiceJSONClient) PutRole(ctx context.Context, in *EntityReque
 
 func (c *apertureServiceJSONClient) callPutRole(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4194,7 +4386,7 @@ func (c *apertureServiceJSONClient) GetRole(ctx context.Context, in *GetRequest)
 
 func (c *apertureServiceJSONClient) callGetRole(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4240,7 +4432,7 @@ func (c *apertureServiceJSONClient) ListRoles(ctx context.Context, in *ListReque
 
 func (c *apertureServiceJSONClient) callListRoles(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4286,7 +4478,7 @@ func (c *apertureServiceJSONClient) DeleteRole(ctx context.Context, in *DeleteRe
 
 func (c *apertureServiceJSONClient) callDeleteRole(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4332,7 +4524,7 @@ func (c *apertureServiceJSONClient) PutGroup(ctx context.Context, in *EntityRequ
 
 func (c *apertureServiceJSONClient) callPutGroup(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4378,7 +4570,7 @@ func (c *apertureServiceJSONClient) GetGroup(ctx context.Context, in *GetRequest
 
 func (c *apertureServiceJSONClient) callGetGroup(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4424,7 +4616,7 @@ func (c *apertureServiceJSONClient) ListGroups(ctx context.Context, in *ListRequ
 
 func (c *apertureServiceJSONClient) callListGroups(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4470,7 +4662,7 @@ func (c *apertureServiceJSONClient) DeleteGroup(ctx context.Context, in *DeleteR
 
 func (c *apertureServiceJSONClient) callDeleteGroup(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4516,7 +4708,7 @@ func (c *apertureServiceJSONClient) PutAccount(ctx context.Context, in *EntityRe
 
 func (c *apertureServiceJSONClient) callPutAccount(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4562,7 +4754,7 @@ func (c *apertureServiceJSONClient) GetAccount(ctx context.Context, in *GetReque
 
 func (c *apertureServiceJSONClient) callGetAccount(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4608,7 +4800,7 @@ func (c *apertureServiceJSONClient) ListAccounts(ctx context.Context, in *ListRe
 
 func (c *apertureServiceJSONClient) callListAccounts(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4654,7 +4846,7 @@ func (c *apertureServiceJSONClient) DeleteAccount(ctx context.Context, in *Delet
 
 func (c *apertureServiceJSONClient) callDeleteAccount(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4700,7 +4892,7 @@ func (c *apertureServiceJSONClient) PutRule(ctx context.Context, in *RuleRequest
 
 func (c *apertureServiceJSONClient) callPutRule(ctx context.Context, in *RuleRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4746,7 +4938,7 @@ func (c *apertureServiceJSONClient) GetRule(ctx context.Context, in *GetRequest)
 
 func (c *apertureServiceJSONClient) callGetRule(ctx context.Context, in *GetRequest) (*RuleResponse, error) {
 	out := new(RuleResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[35], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4792,7 +4984,7 @@ func (c *apertureServiceJSONClient) ListRules(ctx context.Context, in *Empty) (*
 
 func (c *apertureServiceJSONClient) callListRules(ctx context.Context, in *Empty) (*RuleListResponse, error) {
 	out := new(RuleListResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[36], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4838,7 +5030,7 @@ func (c *apertureServiceJSONClient) DeleteRule(ctx context.Context, in *DeleteRe
 
 func (c *apertureServiceJSONClient) callDeleteRule(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[35], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[37], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4884,7 +5076,7 @@ func (c *apertureServiceJSONClient) ValidateRule(ctx context.Context, in *RuleRe
 
 func (c *apertureServiceJSONClient) callValidateRule(ctx context.Context, in *RuleRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[36], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[38], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4930,7 +5122,7 @@ func (c *apertureServiceJSONClient) Simulate(ctx context.Context, in *SimulateRe
 
 func (c *apertureServiceJSONClient) callSimulate(ctx context.Context, in *SimulateRequest) (*Decision, error) {
 	out := new(Decision)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[37], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[39], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -4976,7 +5168,7 @@ func (c *apertureServiceJSONClient) SimulateExplain(ctx context.Context, in *Sim
 
 func (c *apertureServiceJSONClient) callSimulateExplain(ctx context.Context, in *SimulateRequest) (*ExplainResponse, error) {
 	out := new(ExplainResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[38], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[40], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5022,7 +5214,7 @@ func (c *apertureServiceJSONClient) EvaluateRule(ctx context.Context, in *Evalua
 
 func (c *apertureServiceJSONClient) callEvaluateRule(ctx context.Context, in *EvaluateRuleRequest) (*EvaluateRuleResponse, error) {
 	out := new(EvaluateRuleResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[39], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[41], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5068,7 +5260,7 @@ func (c *apertureServiceJSONClient) PutMembership(ctx context.Context, in *Entit
 
 func (c *apertureServiceJSONClient) callPutMembership(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[40], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[42], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5114,7 +5306,7 @@ func (c *apertureServiceJSONClient) DeleteMembership(ctx context.Context, in *Me
 
 func (c *apertureServiceJSONClient) callDeleteMembership(ctx context.Context, in *MembershipKeyRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[41], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[43], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5160,7 +5352,7 @@ func (c *apertureServiceJSONClient) PutGrant(ctx context.Context, in *EntityRequ
 
 func (c *apertureServiceJSONClient) callPutGrant(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[42], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[44], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5206,7 +5398,7 @@ func (c *apertureServiceJSONClient) GetGrant(ctx context.Context, in *GetRequest
 
 func (c *apertureServiceJSONClient) callGetGrant(ctx context.Context, in *GetRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[43], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[45], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5252,7 +5444,7 @@ func (c *apertureServiceJSONClient) ListGrants(ctx context.Context, in *ListGran
 
 func (c *apertureServiceJSONClient) callListGrants(ctx context.Context, in *ListGrantsRequest) (*ListGrantsResponse, error) {
 	out := new(ListGrantsResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[44], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[46], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5298,7 +5490,7 @@ func (c *apertureServiceJSONClient) DeleteGrant(ctx context.Context, in *DeleteR
 
 func (c *apertureServiceJSONClient) callDeleteGrant(ctx context.Context, in *DeleteRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[45], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[47], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5344,7 +5536,7 @@ func (c *apertureServiceJSONClient) PutTemplate(ctx context.Context, in *EntityR
 
 func (c *apertureServiceJSONClient) callPutTemplate(ctx context.Context, in *EntityRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[46], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[48], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5390,7 +5582,7 @@ func (c *apertureServiceJSONClient) GetTemplate(ctx context.Context, in *Templat
 
 func (c *apertureServiceJSONClient) callGetTemplate(ctx context.Context, in *TemplateKeyRequest) (*EntityResponse, error) {
 	out := new(EntityResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[47], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[49], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5436,7 +5628,7 @@ func (c *apertureServiceJSONClient) ListTemplates(ctx context.Context, in *ListR
 
 func (c *apertureServiceJSONClient) callListTemplates(ctx context.Context, in *ListRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[48], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[50], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5482,7 +5674,7 @@ func (c *apertureServiceJSONClient) DeleteTemplate(ctx context.Context, in *Temp
 
 func (c *apertureServiceJSONClient) callDeleteTemplate(ctx context.Context, in *TemplateKeyRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[49], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[51], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5528,7 +5720,7 @@ func (c *apertureServiceJSONClient) ApplyTemplate(ctx context.Context, in *Apply
 
 func (c *apertureServiceJSONClient) callApplyTemplate(ctx context.Context, in *ApplyTemplateRequest) (*EntityListResponse, error) {
 	out := new(EntityListResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[50], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[52], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5574,7 +5766,7 @@ func (c *apertureServiceJSONClient) BulkPutGrants(ctx context.Context, in *BulkG
 
 func (c *apertureServiceJSONClient) callBulkPutGrants(ctx context.Context, in *BulkGrantsRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[51], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[53], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5620,7 +5812,7 @@ func (c *apertureServiceJSONClient) BulkDeleteGrants(ctx context.Context, in *Bu
 
 func (c *apertureServiceJSONClient) callBulkDeleteGrants(ctx context.Context, in *BulkDeleteGrantsRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[52], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[54], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5666,7 +5858,7 @@ func (c *apertureServiceJSONClient) Export(ctx context.Context, in *ExportReques
 
 func (c *apertureServiceJSONClient) callExport(ctx context.Context, in *ExportRequest) (*ExportResponse, error) {
 	out := new(ExportResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[53], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[55], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5712,7 +5904,7 @@ func (c *apertureServiceJSONClient) Import(ctx context.Context, in *ImportReques
 
 func (c *apertureServiceJSONClient) callImport(ctx context.Context, in *ImportRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[54], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[56], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5758,7 +5950,7 @@ func (c *apertureServiceJSONClient) QueryAudit(ctx context.Context, in *QueryAud
 
 func (c *apertureServiceJSONClient) callQueryAudit(ctx context.Context, in *QueryAuditRequest) (*QueryAuditResponse, error) {
 	out := new(QueryAuditResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[55], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[57], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5804,7 +5996,7 @@ func (c *apertureServiceJSONClient) Bestow(ctx context.Context, in *BestowReques
 
 func (c *apertureServiceJSONClient) callBestow(ctx context.Context, in *BestowRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[56], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[58], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5850,7 +6042,7 @@ func (c *apertureServiceJSONClient) Revoke(ctx context.Context, in *RevokeReques
 
 func (c *apertureServiceJSONClient) callRevoke(ctx context.Context, in *RevokeRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[57], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[59], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5896,7 +6088,7 @@ func (c *apertureServiceJSONClient) ImpersonationStart(ctx context.Context, in *
 
 func (c *apertureServiceJSONClient) callImpersonationStart(ctx context.Context, in *ImpersonationStartRequest) (*ImpersonationSession, error) {
 	out := new(ImpersonationSession)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[58], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[60], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -5942,7 +6134,7 @@ func (c *apertureServiceJSONClient) ImpersonationStop(ctx context.Context, in *I
 
 func (c *apertureServiceJSONClient) callImpersonationStop(ctx context.Context, in *ImpersonationStopRequest) (*Empty, error) {
 	out := new(Empty)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[59], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[61], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -6065,6 +6257,12 @@ func (s *apertureServiceServer) ServeHTTP(resp http.ResponseWriter, req *http.Re
 		return
 	case "EnumerateBatch":
 		s.serveEnumerateBatch(ctx, resp, req)
+		return
+	case "Search":
+		s.serveSearch(ctx, resp, req)
+		return
+	case "SearchBatch":
+		s.serveSearchBatch(ctx, resp, req)
 		return
 	case "Explain":
 		s.serveExplain(ctx, resp, req)
@@ -6938,6 +7136,366 @@ func (s *apertureServiceServer) serveEnumerateBatchProtobuf(ctx context.Context,
 	}
 	if respContent == nil {
 		s.writeError(ctx, resp, twirp.InternalError("received a nil *EnumerateBatchResponse and nil error while calling EnumerateBatch. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *apertureServiceServer) serveSearch(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveSearchJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveSearchProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *apertureServiceServer) serveSearchJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "Search")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(SearchRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ApertureService.Search
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *SearchRequest) (*SearchResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*SearchRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*SearchRequest) when calling interceptor")
+					}
+					return s.ApertureService.Search(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SearchResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SearchResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *SearchResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *SearchResponse and nil error while calling Search. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *apertureServiceServer) serveSearchProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "Search")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := io.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(SearchRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ApertureService.Search
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *SearchRequest) (*SearchResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*SearchRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*SearchRequest) when calling interceptor")
+					}
+					return s.ApertureService.Search(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SearchResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SearchResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *SearchResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *SearchResponse and nil error while calling Search. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *apertureServiceServer) serveSearchBatch(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveSearchBatchJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveSearchBatchProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *apertureServiceServer) serveSearchBatchJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "SearchBatch")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(SearchBatchRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ApertureService.SearchBatch
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *SearchBatchRequest) (*SearchBatchResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*SearchBatchRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*SearchBatchRequest) when calling interceptor")
+					}
+					return s.ApertureService.SearchBatch(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SearchBatchResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SearchBatchResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *SearchBatchResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *SearchBatchResponse and nil error while calling SearchBatch. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *apertureServiceServer) serveSearchBatchProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "SearchBatch")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := io.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(SearchBatchRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ApertureService.SearchBatch
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *SearchBatchRequest) (*SearchBatchResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*SearchBatchRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*SearchBatchRequest) when calling interceptor")
+					}
+					return s.ApertureService.SearchBatch(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*SearchBatchResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*SearchBatchResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *SearchBatchResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *SearchBatchResponse and nil error while calling SearchBatch. nil responses are not supported"))
 		return
 	}
 
@@ -17622,162 +18180,178 @@ func callClientError(ctx context.Context, h *twirp.ClientHooks, err twirp.Error)
 }
 
 var twirpFileDescriptor0 = []byte{
-	// 2510 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x59, 0x4b, 0x77, 0xdb, 0xc6,
-	0x15, 0x3e, 0xa4, 0xc4, 0xd7, 0x25, 0x29, 0x51, 0x53, 0xc5, 0xa6, 0x29, 0xbf, 0x02, 0x9f, 0x26,
-	0x6e, 0xe3, 0x4a, 0xb1, 0xec, 0xd8, 0x96, 0xe3, 0xc6, 0x95, 0x64, 0x4a, 0x51, 0x63, 0xd7, 0x32,
-	0xec, 0xa6, 0x8f, 0xb4, 0x47, 0x07, 0x02, 0x46, 0x34, 0x2c, 0x10, 0x40, 0x06, 0x03, 0x59, 0x5a,
-	0xe4, 0x74, 0xd1, 0x9f, 0xd1, 0x55, 0x17, 0xdd, 0x75, 0xd3, 0x75, 0xff, 0x4b, 0x7f, 0x44, 0x97,
-	0x5d, 0xf5, 0xcc, 0x0b, 0x18, 0x80, 0xa0, 0x24, 0x28, 0xc9, 0x8e, 0x73, 0xe7, 0xbe, 0xbe, 0x3b,
-	0x77, 0x2e, 0xee, 0x5c, 0x42, 0x37, 0xc2, 0xe4, 0xc8, 0xb5, 0xf1, 0x72, 0x48, 0x02, 0x1a, 0xa0,
-	0xa6, 0x15, 0x62, 0x42, 0x63, 0x82, 0x07, 0x57, 0x47, 0x41, 0x30, 0xf2, 0xf0, 0x0a, 0xa7, 0xef,
-	0xc7, 0x07, 0x2b, 0x11, 0x25, 0xb1, 0x4d, 0x05, 0x9f, 0xd1, 0x80, 0xda, 0x70, 0x1c, 0xd2, 0x13,
-	0xe3, 0x6f, 0x15, 0x58, 0xdc, 0xb4, 0x42, 0x6b, 0xdf, 0xf5, 0x5c, 0xea, 0xe2, 0xc8, 0xc4, 0x51,
-	0x18, 0xf8, 0x11, 0x46, 0x1f, 0xc3, 0xfc, 0xd8, 0xf2, 0xad, 0x11, 0xde, 0xb3, 0x6c, 0x3b, 0x88,
-	0x7d, 0x1a, 0xf5, 0x2b, 0x37, 0x2b, 0xb7, 0x9b, 0xe6, 0x9c, 0x20, 0xaf, 0x4b, 0x2a, 0xfa, 0x04,
-	0x16, 0x24, 0x63, 0x48, 0x5c, 0xdf, 0x76, 0x43, 0xcb, 0x8b, 0xfa, 0x55, 0xce, 0xda, 0x13, 0x1b,
-	0xbb, 0x09, 0x1d, 0xfd, 0x02, 0x90, 0x64, 0x1e, 0xe3, 0xf1, 0x3e, 0x26, 0xd1, 0x5b, 0x37, 0x8c,
-	0xfa, 0x33, 0x9c, 0x5b, 0xaa, 0x79, 0x91, 0x6e, 0x18, 0xcf, 0x61, 0x6e, 0xcb, 0xc5, 0x9e, 0xb3,
-	0x4b, 0xb0, 0xe3, 0xda, 0x16, 0xc5, 0x68, 0x11, 0x6a, 0x07, 0x8c, 0xc2, 0x9d, 0x69, 0x99, 0x62,
-	0x81, 0xe6, 0xa0, 0x1a, 0x84, 0xdc, 0x68, 0xcb, 0xac, 0x06, 0x21, 0xe3, 0x3a, 0xb2, 0xbc, 0x18,
-	0x73, 0xcd, 0x2d, 0x53, 0x2c, 0x8c, 0xdf, 0x43, 0x7d, 0xcb, 0xf5, 0x28, 0x26, 0xe8, 0x11, 0x40,
-	0xa8, 0x54, 0x32, 0x5c, 0x33, 0xb7, 0xdb, 0xab, 0xfd, 0x65, 0x15, 0xbb, 0xe5, 0xac, 0x4d, 0x53,
-	0xe3, 0x65, 0x9a, 0xc7, 0x16, 0xb5, 0xdf, 0x4a, 0x63, 0x62, 0x61, 0x3c, 0x84, 0xf6, 0x73, 0x37,
-	0xa2, 0x26, 0xfe, 0x36, 0xc6, 0x11, 0x45, 0xb7, 0xa1, 0x7e, 0xc0, 0x0d, 0x71, 0x2f, 0xdb, 0xab,
-	0x3d, 0x5d, 0x35, 0xa3, 0x9b, 0x72, 0xdf, 0x78, 0x0a, 0xb5, 0x75, 0x9b, 0x06, 0x04, 0x5d, 0x85,
-	0x56, 0x12, 0x3e, 0x89, 0x2d, 0x25, 0xa0, 0x3e, 0x34, 0xe4, 0x29, 0x48, 0xbb, 0x6a, 0x69, 0x1c,
-	0x41, 0x67, 0xf3, 0x2d, 0xb6, 0x0f, 0x95, 0x69, 0x8d, 0xb3, 0x92, 0xe1, 0xcc, 0x5a, 0xa8, 0xe6,
-	0x2d, 0x5c, 0x82, 0xba, 0x65, 0x53, 0x37, 0xf0, 0x65, 0xc8, 0xe4, 0x8a, 0xd1, 0x83, 0xfd, 0x77,
-	0xd8, 0xa6, 0xfd, 0x59, 0x41, 0x17, 0x2b, 0xe3, 0x00, 0x9a, 0xcf, 0xb0, 0xed, 0x46, 0x8c, 0x67,
-	0x11, 0x6a, 0x96, 0xe7, 0x05, 0xef, 0x65, 0x82, 0x88, 0x05, 0x93, 0x24, 0xd8, 0x8a, 0x02, 0x5f,
-	0x1a, 0x93, 0x2b, 0x74, 0x07, 0x90, 0x83, 0x6d, 0xd7, 0x71, 0xfd, 0xd1, 0xde, 0x88, 0x58, 0x3e,
-	0xdd, 0x73, 0x1d, 0x96, 0x02, 0x33, 0xb7, 0x5b, 0x66, 0x4f, 0xed, 0x6c, 0xb3, 0x8d, 0x1d, 0x27,
-	0x32, 0x86, 0xb0, 0xc0, 0xf1, 0x6d, 0xb0, 0x38, 0x2b, 0x90, 0x9f, 0x42, 0xe3, 0xdb, 0x18, 0x13,
-	0x37, 0x39, 0xbb, 0x4b, 0x69, 0x80, 0xf5, 0x68, 0x98, 0x8a, 0xcd, 0xf8, 0x6b, 0x05, 0xba, 0x5c,
-	0x45, 0xe2, 0xf4, 0x32, 0x34, 0x1d, 0xf9, 0x5b, 0x9e, 0x12, 0x4a, 0x95, 0x28, 0x2e, 0x33, 0xe1,
-	0x41, 0xd7, 0x00, 0x30, 0x21, 0x01, 0xd9, 0xb3, 0x03, 0x07, 0xab, 0xf8, 0x71, 0xca, 0x66, 0xe0,
-	0x60, 0x74, 0x0b, 0xba, 0x62, 0x7b, 0x8c, 0xa3, 0xc8, 0x1a, 0xa9, 0xcc, 0xeb, 0x70, 0xe2, 0x0b,
-	0x41, 0x33, 0xb6, 0x01, 0xe9, 0x60, 0xe4, 0x4d, 0xbb, 0x0b, 0x0d, 0x82, 0xa3, 0xd8, 0xa3, 0x0a,
-	0xcd, 0xe5, 0xd4, 0x91, 0x8c, 0xcf, 0xa6, 0xe2, 0x33, 0xfe, 0x53, 0x85, 0xde, 0xd0, 0x8f, 0xc7,
-	0x98, 0xb0, 0xfc, 0xfc, 0x91, 0x8e, 0xbe, 0x0f, 0x8d, 0xd0, 0xa2, 0x14, 0x13, 0x5f, 0x9e, 0xbd,
-	0x5a, 0xb2, 0x03, 0xf7, 0xdc, 0xb1, 0x4b, 0xfb, 0xb5, 0x9b, 0x95, 0xdb, 0x35, 0x53, 0x2c, 0xd0,
-	0x17, 0x2c, 0xeb, 0xb1, 0xe7, 0x44, 0xfd, 0x3a, 0x87, 0xf1, 0x51, 0x0a, 0x23, 0xef, 0xab, 0xb8,
-	0x61, 0xd1, 0xd0, 0xa7, 0xe4, 0xc4, 0x94, 0x52, 0xe8, 0x21, 0x00, 0xc1, 0x07, 0x98, 0x60, 0xdf,
-	0xc6, 0x51, 0xbf, 0x91, 0x0f, 0x85, 0xa9, 0xf6, 0x86, 0xce, 0x08, 0x9b, 0x1a, 0xeb, 0xe0, 0x15,
-	0xb4, 0x35, 0x7d, 0xa8, 0x07, 0x33, 0x87, 0xf8, 0x44, 0xc6, 0x80, 0xfd, 0x44, 0x77, 0x54, 0x39,
-	0xa8, 0xf2, 0x83, 0xbe, 0xb4, 0x2c, 0x6a, 0xe3, 0xb2, 0xaa, 0x8d, 0xcb, 0x5f, 0xb3, 0x5d, 0x59,
-	0x26, 0x1e, 0x57, 0x1f, 0x55, 0x0c, 0x1b, 0xba, 0x19, 0x7b, 0xe8, 0x06, 0xb4, 0xdf, 0x06, 0x9e,
-	0x83, 0xc9, 0x1e, 0x3d, 0x09, 0xb1, 0x54, 0x0e, 0x82, 0xf4, 0xe6, 0x24, 0xc4, 0x68, 0x09, 0x5a,
-	0x92, 0xc1, 0x75, 0x64, 0x8c, 0x9b, 0x82, 0xb0, 0xe3, 0xa4, 0x55, 0x6b, 0x46, 0xab, 0x5a, 0xc6,
-	0x2a, 0x2c, 0x68, 0x81, 0x91, 0xd9, 0x70, 0x0d, 0x40, 0x5c, 0x31, 0x7e, 0x2d, 0x2a, 0xfc, 0x5a,
-	0xb4, 0x04, 0x85, 0xdd, 0x87, 0xdf, 0x42, 0xff, 0xa5, 0x5c, 0x60, 0x9f, 0xba, 0x07, 0x2e, 0x26,
-	0x91, 0x4a, 0x80, 0x1b, 0xd0, 0x96, 0xa2, 0xba, 0x8f, 0x82, 0xc4, 0x7d, 0xec, 0x43, 0x03, 0x1f,
-	0xdb, 0x5e, 0xcc, 0x13, 0x98, 0x29, 0x56, 0x4b, 0xe3, 0x31, 0x5c, 0x29, 0x50, 0x7b, 0x3e, 0x97,
-	0x5e, 0xc2, 0x4f, 0x86, 0x2c, 0x72, 0x0c, 0x45, 0xec, 0x25, 0xe9, 0xb8, 0x04, 0x2d, 0x12, 0x7b,
-	0x78, 0xef, 0x5d, 0x24, 0x6f, 0x58, 0xcb, 0x6c, 0x32, 0xc2, 0xaf, 0x59, 0x11, 0x58, 0x82, 0x56,
-	0xa2, 0x52, 0x45, 0x4b, 0x69, 0x34, 0xfe, 0x5e, 0x81, 0xc5, 0xac, 0x46, 0xe9, 0x08, 0x2f, 0x29,
-	0xec, 0x06, 0xc8, 0x4a, 0x23, 0x57, 0x1a, 0xf0, 0x77, 0x69, 0xbd, 0x91, 0x3e, 0x73, 0x73, 0x3d,
-	0x98, 0xf1, 0x83, 0xf7, 0x32, 0xfa, 0xec, 0x27, 0x13, 0xd9, 0x0f, 0x62, 0xdf, 0x89, 0x84, 0x88,
-	0x48, 0x70, 0x10, 0x24, 0x2e, 0x72, 0x0d, 0xc0, 0x0f, 0x28, 0x96, 0xfb, 0x35, 0x71, 0x69, 0x38,
-	0x85, 0x6d, 0x1b, 0x2f, 0xe0, 0x83, 0xe4, 0xec, 0x32, 0xb5, 0xe9, 0x7e, 0xbe, 0x36, 0x0d, 0xa6,
-	0x5f, 0x83, 0xb4, 0x3e, 0xc5, 0xd0, 0xe3, 0x5a, 0x14, 0x87, 0xac, 0x38, 0xa7, 0x84, 0xfd, 0x07,
-	0x29, 0x48, 0xbf, 0x81, 0x4b, 0x79, 0x14, 0x32, 0xd4, 0xf7, 0xf3, 0x45, 0x69, 0x90, 0x2b, 0x4a,
-	0x9a, 0xa7, 0x69, 0x5d, 0xfa, 0x14, 0xe6, 0x87, 0xc7, 0xa1, 0x67, 0xb9, 0xbe, 0x9e, 0x3c, 0x94,
-	0x58, 0x76, 0x26, 0x0f, 0x5a, 0x9c, 0xc2, 0xe3, 0x18, 0x00, 0x70, 0x75, 0x6f, 0x18, 0xe5, 0x0c,
-	0xe6, 0x1f, 0x04, 0xf2, 0x16, 0x2c, 0x4a, 0x17, 0xb3, 0x80, 0x97, 0xf3, 0x80, 0x17, 0x73, 0x80,
-	0xb9, 0x87, 0x29, 0xd4, 0xdf, 0x41, 0x77, 0xe8, 0x53, 0x97, 0x9e, 0xa8, 0x83, 0xff, 0x29, 0xd4,
-	0x2c, 0xf6, 0x29, 0x97, 0x5f, 0x93, 0xf9, 0x54, 0x9c, 0x7f, 0xe1, 0x4d, 0xb1, 0xcb, 0x12, 0x0f,
-	0x73, 0xb9, 0x4c, 0xae, 0x0a, 0x12, 0x8f, 0xc8, 0x26, 0xc0, 0x36, 0xa6, 0x25, 0xb5, 0xce, 0x41,
-	0x35, 0xb9, 0x48, 0x55, 0xd7, 0x31, 0xb6, 0xa0, 0xfb, 0x0c, 0x7b, 0x38, 0xfd, 0x38, 0x5c, 0x50,
-	0xcf, 0x5d, 0x98, 0x53, 0x28, 0x65, 0x9c, 0x72, 0xfe, 0x57, 0x26, 0xfc, 0x5f, 0x03, 0x24, 0x44,
-	0x44, 0x47, 0x24, 0xc5, 0xd8, 0xd9, 0x30, 0xaa, 0xab, 0x6e, 0x94, 0xc8, 0xe7, 0x8e, 0x22, 0x72,
-	0xd1, 0x57, 0xd0, 0xd6, 0x2b, 0xc8, 0x39, 0x7d, 0xce, 0x14, 0x9a, 0x6a, 0xb6, 0xd0, 0x18, 0x9f,
-	0x40, 0x27, 0x53, 0x42, 0x4e, 0xab, 0x4a, 0xc6, 0x5d, 0xe8, 0x31, 0xe6, 0x8c, 0xe3, 0xd7, 0x00,
-	0xd8, 0x7e, 0xc6, 0x6b, 0xae, 0x42, 0xb8, 0xfc, 0xbf, 0x0a, 0xcc, 0xbf, 0x76, 0xc7, 0xb1, 0x67,
-	0x95, 0x8e, 0xf5, 0x1d, 0xa8, 0xb1, 0xeb, 0x7f, 0x92, 0x7c, 0x95, 0x8a, 0x7b, 0x18, 0xc1, 0x94,
-	0xf3, 0x63, 0x26, 0xe7, 0x07, 0x3b, 0x16, 0xde, 0x4c, 0x25, 0xf5, 0x8c, 0xed, 0x83, 0x20, 0x71,
-	0x86, 0x9f, 0x41, 0x2f, 0xc4, 0x64, 0xec, 0x46, 0xac, 0x93, 0x48, 0xaa, 0x1a, 0xe3, 0x9a, 0xd7,
-	0xe8, 0x9c, 0xf5, 0x63, 0x98, 0x4f, 0x5b, 0x79, 0xc1, 0x59, 0xe7, 0x9c, 0x73, 0x29, 0x99, 0x83,
-	0xff, 0x0b, 0x2c, 0xa6, 0xdd, 0xfa, 0x57, 0xb8, 0xec, 0x55, 0xf8, 0x10, 0x3a, 0x89, 0xc2, 0xf4,
-	0x3b, 0xd0, 0x4e, 0x68, 0x3b, 0x0e, 0x43, 0x2d, 0x9b, 0x18, 0xc6, 0x20, 0xee, 0x73, 0x4b, 0x52,
-	0x76, 0x1c, 0xe3, 0x5f, 0x15, 0x58, 0x60, 0xa7, 0xc5, 0xdb, 0xc5, 0xa8, 0xa4, 0xf9, 0xac, 0xee,
-	0x6a, 0x4e, 0xb7, 0xd6, 0xc4, 0xcf, 0x9c, 0xde, 0xc4, 0xf3, 0x1e, 0xf9, 0xe0, 0x20, 0xc2, 0xa2,
-	0x47, 0xae, 0x99, 0x72, 0x55, 0xdc, 0x26, 0x19, 0xdf, 0x01, 0xd2, 0x5d, 0x2e, 0x71, 0x3f, 0x98,
-	0x42, 0x1a, 0x50, 0xd9, 0xc3, 0xd5, 0x4c, 0xb1, 0xd0, 0xcc, 0xcf, 0x14, 0x9b, 0x9f, 0xd5, 0xcd,
-	0xbb, 0x80, 0xde, 0xe0, 0x71, 0xc8, 0xf2, 0xb5, 0xfc, 0x89, 0x21, 0x98, 0xf5, 0xad, 0xb1, 0x2a,
-	0xbd, 0xfc, 0x37, 0x6b, 0x2a, 0x8e, 0x30, 0x89, 0x54, 0xff, 0x58, 0x33, 0xd5, 0xd2, 0xf8, 0x67,
-	0x15, 0x16, 0xd7, 0xc3, 0xd0, 0x3b, 0x51, 0x06, 0x7f, 0x4c, 0x6b, 0x7a, 0xfb, 0x3b, 0x9b, 0x6d,
-	0x7f, 0x37, 0xa0, 0x1e, 0x5a, 0xc4, 0x1a, 0x47, 0x3c, 0xe1, 0xdb, 0xab, 0x3f, 0xd7, 0xec, 0x15,
-	0xb8, 0xb7, 0xbc, 0xcb, 0x99, 0x65, 0x73, 0x2a, 0x24, 0xd1, 0x47, 0x30, 0xaf, 0x1e, 0x2b, 0x7b,
-	0x21, 0xc1, 0x07, 0xee, 0x71, 0xbf, 0xce, 0xad, 0x74, 0x47, 0xe2, 0xa9, 0xb2, 0xcb, 0x89, 0x83,
-	0x35, 0x68, 0x6b, 0xe2, 0x05, 0xbd, 0xe8, 0xa2, 0xde, 0x8b, 0xb6, 0xf4, 0x9e, 0xf3, 0x1b, 0x58,
-	0xd8, 0x88, 0xbd, 0xc3, 0x0b, 0xe5, 0x72, 0xee, 0xfa, 0x57, 0xf3, 0xd7, 0xdf, 0xf8, 0x33, 0x5c,
-	0x66, 0xca, 0xc5, 0x47, 0xe1, 0x42, 0x26, 0x96, 0xa0, 0x95, 0x3e, 0xd7, 0x84, 0x81, 0xe6, 0x48,
-	0x3d, 0xd3, 0x1e, 0x40, 0x77, 0x78, 0x1c, 0x06, 0xa4, 0xe4, 0x77, 0xcb, 0xf8, 0x0c, 0xe6, 0x94,
-	0x5c, 0x7a, 0x11, 0x9c, 0xc0, 0x8e, 0xc7, 0xd8, 0xa7, 0x7a, 0x91, 0xee, 0x28, 0x22, 0x47, 0xf3,
-	0x0d, 0x74, 0x77, 0xc6, 0xe5, 0xcd, 0x4d, 0x2a, 0xaf, 0x16, 0x28, 0xff, 0x6f, 0x05, 0x16, 0x5e,
-	0xb1, 0x9a, 0xbb, 0x1e, 0x3b, 0x2e, 0x2d, 0x5f, 0xd3, 0x44, 0x55, 0xd8, 0x13, 0xdc, 0xb2, 0xa6,
-	0x09, 0x9a, 0x78, 0xea, 0x6b, 0x89, 0x3a, 0x93, 0x4d, 0x54, 0xd6, 0xdf, 0x1c, 0x31, 0xdf, 0x78,
-	0xff, 0x3e, 0x2b, 0xfb, 0x1b, 0x46, 0x51, 0xed, 0x7b, 0x10, 0x53, 0x3b, 0x18, 0x63, 0xd9, 0x8f,
-	0xaa, 0x25, 0x4b, 0xaa, 0xc8, 0xf5, 0x6d, 0x2c, 0x73, 0x52, 0x2c, 0x18, 0x35, 0xf6, 0xa9, 0xeb,
-	0xf5, 0x1b, 0x82, 0xca, 0x17, 0x69, 0x59, 0x68, 0xea, 0x65, 0xe1, 0x33, 0x40, 0x3a, 0x66, 0xed,
-	0x63, 0xcf, 0xcc, 0x67, 0x6a, 0x92, 0xf0, 0x51, 0xa4, 0xd5, 0x73, 0xe8, 0x6e, 0xe0, 0x88, 0x06,
-	0xef, 0x55, 0x98, 0xae, 0x42, 0xcb, 0xc1, 0x1e, 0x1e, 0x59, 0x2a, 0x54, 0x2d, 0x33, 0x25, 0x30,
-	0x80, 0x22, 0x87, 0xb4, 0xe0, 0x8b, 0xac, 0xe2, 0xda, 0xbe, 0x64, 0xaf, 0xae, 0xa3, 0xe0, 0x10,
-	0x9f, 0x4f, 0xdb, 0x15, 0x68, 0xaa, 0x8c, 0x54, 0x63, 0x11, 0x99, 0x90, 0xc6, 0x77, 0x70, 0x65,
-	0x67, 0x1c, 0x62, 0x12, 0x05, 0x3e, 0x6f, 0x51, 0x5f, 0x53, 0x2b, 0x4d, 0x96, 0x01, 0x34, 0x83,
-	0x90, 0xf5, 0xae, 0x89, 0xd2, 0x64, 0xcd, 0x8a, 0x29, 0xb5, 0xc8, 0x08, 0xab, 0x41, 0x8b, 0x5c,
-	0x9d, 0x72, 0x68, 0x08, 0x66, 0xc7, 0xac, 0x1d, 0x15, 0xc7, 0xc5, 0x7f, 0x1b, 0xff, 0xae, 0xc0,
-	0x62, 0xd6, 0x3e, 0x8e, 0xd4, 0x14, 0x81, 0x60, 0xcb, 0xdb, 0x4b, 0x53, 0x89, 0x7d, 0xc5, 0xb1,
-	0xe5, 0x25, 0xa9, 0x11, 0xc5, 0x62, 0xdc, 0x22, 0x01, 0xc9, 0x65, 0x39, 0xfb, 0xcc, 0x4c, 0xc4,
-	0x10, 0x63, 0x67, 0xcf, 0xa2, 0xea, 0xf1, 0x22, 0x29, 0xeb, 0x22, 0xcf, 0x8e, 0x43, 0x97, 0xe0,
-	0x88, 0x6d, 0xd7, 0x65, 0x9e, 0x09, 0xca, 0x3a, 0x35, 0x42, 0xe8, 0xe7, 0x82, 0x17, 0x84, 0xe7,
-	0x89, 0xdd, 0x23, 0x68, 0x44, 0x02, 0xa7, 0x6c, 0x69, 0xae, 0xa7, 0x97, 0xa4, 0x28, 0x1a, 0xa6,
-	0x62, 0x5f, 0xfd, 0xc7, 0x75, 0x98, 0x5f, 0x97, 0xac, 0xaf, 0xc5, 0x40, 0x13, 0xdd, 0x83, 0x1a,
-	0xef, 0x83, 0xd0, 0x94, 0xc6, 0x68, 0x50, 0x30, 0xaf, 0x41, 0xdb, 0x00, 0xe9, 0x84, 0x05, 0x2d,
-	0xe5, 0x24, 0xf5, 0x87, 0xda, 0xe0, 0x6a, 0xf1, 0xa6, 0xcc, 0xfc, 0x67, 0xd0, 0x4a, 0x5e, 0x46,
-	0xe8, 0x94, 0x27, 0xdc, 0x60, 0xa9, 0x70, 0x4f, 0x6a, 0x79, 0xcd, 0xda, 0x67, 0xfd, 0x7d, 0x85,
-	0x6e, 0x14, 0xb0, 0x67, 0xdc, 0xba, 0x39, 0x9d, 0x41, 0x2a, 0x7d, 0x02, 0x0d, 0xf9, 0x82, 0x99,
-	0x1a, 0x9a, 0x2b, 0x9a, 0x92, 0xdc, 0x7b, 0xec, 0x2b, 0xe8, 0xe8, 0xef, 0x9f, 0xd3, 0x63, 0x74,
-	0x7d, 0x42, 0x4f, 0xd6, 0x95, 0xa7, 0xd0, 0xd1, 0x87, 0xc7, 0x48, 0xab, 0x8a, 0x7c, 0xbc, 0xac,
-	0x2b, 0x28, 0x9c, 0x32, 0xaf, 0x41, 0x77, 0x37, 0xa6, 0x2f, 0xd3, 0x11, 0xc5, 0x65, 0x1d, 0xbe,
-	0xf6, 0xbc, 0x1a, 0xe4, 0x55, 0xa3, 0xa7, 0xd0, 0xdd, 0xc6, 0xba, 0xa8, 0xf6, 0x60, 0x4b, 0x1f,
-	0x50, 0x83, 0xfe, 0xa4, 0x42, 0x69, 0x7b, 0x0b, 0xe6, 0x59, 0x23, 0x96, 0x6a, 0x88, 0xd0, 0x07,
-	0x29, 0xb3, 0x36, 0xcf, 0xd5, 0x53, 0xa5, 0xe0, 0x69, 0xf3, 0x04, 0x7a, 0xe2, 0xb3, 0x5a, 0x0c,
-	0x23, 0xf3, 0x0e, 0x9b, 0x84, 0xf1, 0x27, 0x58, 0x98, 0x98, 0xbc, 0x20, 0x23, 0xe5, 0x9a, 0x36,
-	0xed, 0x19, 0xdc, 0x3a, 0x95, 0x27, 0x13, 0xdf, 0xdd, 0xa4, 0xc1, 0x2f, 0x1d, 0x5f, 0x4d, 0xf4,
-	0x82, 0xf1, 0x4d, 0x35, 0x7c, 0xdf, 0xf8, 0x16, 0xc3, 0x38, 0x23, 0xbe, 0x8f, 0xa0, 0xc3, 0x22,
-	0x90, 0x4c, 0x3b, 0xcf, 0x1f, 0x80, 0x2f, 0xa0, 0xc3, 0x02, 0x90, 0x48, 0x96, 0xc5, 0x3f, 0x84,
-	0x39, 0x8e, 0x3f, 0xfd, 0xf7, 0xe3, 0x42, 0xf0, 0x3f, 0x87, 0x79, 0x09, 0xbf, 0x08, 0xc3, 0x19,
-	0xe8, 0xef, 0x41, 0x63, 0x37, 0xa6, 0x66, 0xe0, 0x95, 0xb9, 0x59, 0x6b, 0xd0, 0x60, 0x00, 0x99,
-	0x50, 0x59, 0xcc, 0xbf, 0x82, 0x16, 0x77, 0x3e, 0xf0, 0x2e, 0x7a, 0x9b, 0x1e, 0x00, 0x48, 0x4c,
-	0x39, 0xa7, 0xcf, 0x40, 0x7a, 0x1f, 0x9a, 0xbb, 0x31, 0xdd, 0x26, 0x41, 0x1c, 0x96, 0x80, 0xfa,
-	0x18, 0x9a, 0xdb, 0x58, 0x4a, 0x95, 0xc5, 0xba, 0x0e, 0x20, 0x1e, 0x72, 0x41, 0x1c, 0x5e, 0x10,
-	0xec, 0x43, 0x68, 0xab, 0x8e, 0x3c, 0xe7, 0xf7, 0x19, 0x68, 0x1f, 0x00, 0xec, 0xc6, 0x54, 0xfe,
-	0x07, 0x57, 0x02, 0xef, 0x13, 0x3e, 0x5c, 0x52, 0x72, 0x65, 0x11, 0x6f, 0x42, 0x87, 0xb9, 0x9f,
-	0xfc, 0xf5, 0x77, 0x21, 0xcc, 0x6b, 0x6a, 0x34, 0x55, 0xe0, 0xfd, 0x19, 0xa8, 0xef, 0x8a, 0x6c,
-	0x8e, 0x3d, 0xac, 0x9b, 0xd6, 0x46, 0x46, 0x93, 0x22, 0x0f, 0x45, 0x2e, 0xc7, 0x53, 0x73, 0xf9,
-	0x52, 0x5e, 0x91, 0x74, 0xf3, 0x91, 0xcc, 0xe4, 0xd8, 0x2b, 0xfa, 0xae, 0x0d, 0xb2, 0x52, 0x53,
-	0x32, 0x38, 0x2e, 0x95, 0xc1, 0x0f, 0xa0, 0xf3, 0xb5, 0xe5, 0xb9, 0x8e, 0x9c, 0x7a, 0x9f, 0x1b,
-	0xe2, 0x1a, 0x34, 0xd5, 0x04, 0x0a, 0x69, 0x1f, 0xfe, 0xdc, 0x54, 0x6a, 0x4a, 0xbb, 0x94, 0x0c,
-	0xaf, 0x54, 0x4b, 0x71, 0x8a, 0x86, 0x53, 0xba, 0x8a, 0x17, 0xd0, 0xd1, 0x27, 0xf6, 0xe8, 0x9a,
-	0xc6, 0x3a, 0xf9, 0xdf, 0x40, 0xa6, 0xaf, 0x28, 0x1a, 0xf4, 0x8b, 0xcf, 0x56, 0x3a, 0x5b, 0x2a,
-	0x91, 0xe1, 0x9b, 0xea, 0x6b, 0xa1, 0x49, 0x6b, 0xe6, 0x8a, 0xe6, 0x55, 0xd3, 0x8b, 0x89, 0x55,
-	0xea, 0x72, 0xa9, 0x62, 0x62, 0x5d, 0xe0, 0x6a, 0x6d, 0xab, 0x62, 0xc2, 0x5e, 0xe6, 0x7a, 0x53,
-	0x36, 0x31, 0xde, 0xd2, 0xaf, 0x57, 0xc1, 0x20, 0x49, 0x2b, 0x29, 0x56, 0xa9, 0xcb, 0xf5, 0x10,
-	0xda, 0xbb, 0x31, 0x55, 0xb3, 0x90, 0x12, 0xb0, 0x87, 0xd0, 0xde, 0xc6, 0xa9, 0xa0, 0xe6, 0xde,
-	0xe4, 0xa0, 0xe9, 0x94, 0x08, 0x3c, 0x83, 0x2e, 0x83, 0xa3, 0x64, 0x2e, 0x58, 0x5d, 0x9e, 0xc2,
-	0x9c, 0xc0, 0x79, 0x4e, 0x7f, 0x26, 0xd0, 0xbc, 0x80, 0x6e, 0x66, 0x28, 0xa4, 0x27, 0x4f, 0xd1,
-	0xb4, 0xe8, 0x0c, 0x7f, 0x7e, 0x09, 0xdd, 0x8d, 0xd8, 0x3b, 0x54, 0xd9, 0x94, 0x39, 0xda, 0x89,
-	0x69, 0xcf, 0xa4, 0x37, 0x5b, 0xd0, 0xcb, 0x8f, 0x6d, 0xd0, 0x87, 0x59, 0x0d, 0x05, 0x23, 0x9d,
-	0x49, 0x3d, 0x9f, 0x43, 0x5d, 0xcc, 0x59, 0x32, 0xe7, 0xaa, 0x4f, 0x6c, 0x32, 0x27, 0x93, 0x1d,
-	0xc9, 0xac, 0x42, 0x5d, 0x4c, 0x5b, 0x74, 0xe1, 0xcc, 0xfc, 0x65, 0xd2, 0xe0, 0x36, 0x40, 0x3a,
-	0x4f, 0xd0, 0x41, 0x4f, 0x4c, 0x56, 0xf4, 0x00, 0x16, 0x8c, 0x20, 0x56, 0xa1, 0x2e, 0x26, 0x0c,
-	0xba, 0xf1, 0xcc, 0xcc, 0x61, 0xd2, 0xf8, 0x2a, 0xd4, 0xc5, 0x1c, 0x01, 0x65, 0xfe, 0x3f, 0xd6,
-	0x26, 0x0b, 0x93, 0x32, 0x7f, 0x00, 0x34, 0x39, 0x31, 0x40, 0xb7, 0xa6, 0xbd, 0x60, 0xb5, 0x79,
-	0xc2, 0xe0, 0x8c, 0x67, 0x2e, 0xfa, 0x12, 0x16, 0x26, 0xde, 0xd3, 0x7a, 0x8b, 0x3f, 0xed, 0xb1,
-	0x3d, 0xe1, 0xe4, 0xc6, 0xbd, 0x3f, 0xde, 0x1d, 0xb9, 0xf4, 0x6d, 0xbc, 0xbf, 0x6c, 0x07, 0xe3,
-	0x95, 0x03, 0x62, 0xf9, 0x87, 0xfb, 0x16, 0x71, 0x02, 0x7f, 0x45, 0x31, 0xae, 0xb8, 0x3e, 0xc5,
-	0xc4, 0xb7, 0xbc, 0x95, 0xf7, 0x2e, 0xc1, 0x2b, 0x24, 0xb4, 0xf7, 0xeb, 0xfc, 0x6f, 0xee, 0x7b,
-	0xff, 0x0f, 0x00, 0x00, 0xff, 0xff, 0x07, 0xee, 0xdc, 0xc1, 0x2b, 0x24, 0x00, 0x00,
+	// 2756 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x3a, 0x5b, 0x73, 0xd4, 0xc8,
+	0xd5, 0x35, 0x63, 0xcf, 0xed, 0xcc, 0x8c, 0x2f, 0xbd, 0x06, 0x86, 0x31, 0x2c, 0x20, 0xea, 0xdb,
+	0xf5, 0x97, 0x25, 0xf6, 0xda, 0xb0, 0x80, 0x81, 0x2c, 0xb1, 0x8d, 0xed, 0xf5, 0x2e, 0x0e, 0x46,
+	0x26, 0x9b, 0xcb, 0x26, 0x35, 0x25, 0x4b, 0xed, 0x41, 0x58, 0xb7, 0x95, 0x5a, 0x06, 0x3f, 0x6c,
+	0xa5, 0x2a, 0xf9, 0x19, 0x79, 0xca, 0x7b, 0x6a, 0xab, 0xf2, 0x9c, 0xff, 0x92, 0x1f, 0x91, 0xc7,
+	0x54, 0xa5, 0x2a, 0xd5, 0x37, 0xa9, 0xa5, 0xd1, 0xd8, 0x96, 0x03, 0x79, 0x9b, 0x3e, 0x7d, 0xfa,
+	0xdc, 0xfb, 0xf4, 0x39, 0x47, 0x03, 0xdd, 0x08, 0x87, 0xc7, 0xb6, 0x89, 0x17, 0x83, 0xd0, 0x27,
+	0x3e, 0x6a, 0x1a, 0x01, 0x0e, 0x49, 0x1c, 0xe2, 0xfe, 0xb5, 0xa1, 0xef, 0x0f, 0x1d, 0xbc, 0xc4,
+	0xe0, 0x07, 0xf1, 0xe1, 0x52, 0x44, 0xc2, 0xd8, 0x24, 0x1c, 0x4f, 0x6b, 0x40, 0x6d, 0xd3, 0x0d,
+	0xc8, 0x89, 0xf6, 0xe7, 0x0a, 0xcc, 0x6d, 0x18, 0x81, 0x71, 0x60, 0x3b, 0x36, 0xb1, 0x71, 0xa4,
+	0xe3, 0x28, 0xf0, 0xbd, 0x08, 0xa3, 0x4f, 0x61, 0xda, 0x35, 0x3c, 0x63, 0x88, 0x07, 0x86, 0x69,
+	0xfa, 0xb1, 0x47, 0xa2, 0x5e, 0xe5, 0x66, 0x65, 0xa1, 0xa9, 0x4f, 0x71, 0xf0, 0x9a, 0x80, 0xa2,
+	0xcf, 0x60, 0x56, 0x20, 0x06, 0xa1, 0xed, 0x99, 0x76, 0x60, 0x38, 0x51, 0xaf, 0xca, 0x50, 0x67,
+	0xf8, 0xc6, 0x5e, 0x02, 0x47, 0x3f, 0x05, 0x24, 0x90, 0x5d, 0xec, 0x1e, 0xe0, 0x30, 0x7a, 0x6d,
+	0x07, 0x51, 0x6f, 0x82, 0x61, 0x0b, 0x32, 0xbb, 0xe9, 0x86, 0xf6, 0x1c, 0xa6, 0xb6, 0x6c, 0xec,
+	0x58, 0x7b, 0x21, 0xb6, 0x6c, 0xd3, 0x20, 0x18, 0xcd, 0x41, 0xed, 0x90, 0x42, 0x98, 0x30, 0x2d,
+	0x9d, 0x2f, 0xd0, 0x14, 0x54, 0xfd, 0x80, 0x31, 0x6d, 0xe9, 0x55, 0x3f, 0xa0, 0x58, 0xc7, 0x86,
+	0x13, 0x63, 0x46, 0xb9, 0xa5, 0xf3, 0x85, 0xf6, 0x6b, 0xa8, 0x6f, 0xd9, 0x0e, 0xc1, 0x21, 0x7a,
+	0x08, 0x10, 0x48, 0x92, 0x54, 0xaf, 0x89, 0x85, 0xf6, 0x4a, 0x6f, 0x51, 0xda, 0x6e, 0x31, 0xcb,
+	0x53, 0x57, 0x70, 0x29, 0x65, 0xd7, 0x20, 0xe6, 0x6b, 0xc1, 0x8c, 0x2f, 0xb4, 0x07, 0xd0, 0x7e,
+	0x6e, 0x47, 0x44, 0xc7, 0xdf, 0xc7, 0x38, 0x22, 0x68, 0x01, 0xea, 0x87, 0x8c, 0x11, 0x93, 0xb2,
+	0xbd, 0x32, 0xa3, 0x92, 0xa6, 0x70, 0x5d, 0xec, 0x6b, 0x4f, 0xa1, 0xb6, 0x66, 0x12, 0x3f, 0x44,
+	0xd7, 0xa0, 0x95, 0x98, 0x4f, 0xe8, 0x96, 0x02, 0x50, 0x0f, 0x1a, 0xc2, 0x0b, 0x82, 0xaf, 0x5c,
+	0x6a, 0xc7, 0xd0, 0xd9, 0x78, 0x8d, 0xcd, 0x23, 0xc9, 0x5a, 0xc1, 0xac, 0x64, 0x30, 0xb3, 0x1c,
+	0xaa, 0x79, 0x0e, 0x97, 0xa1, 0x6e, 0x98, 0xc4, 0xf6, 0x3d, 0x61, 0x32, 0xb1, 0xa2, 0x70, 0xff,
+	0xe0, 0x0d, 0x36, 0x49, 0x6f, 0x92, 0xc3, 0xf9, 0x4a, 0x3b, 0x84, 0xe6, 0x33, 0x6c, 0xda, 0x11,
+	0xc5, 0x99, 0x83, 0x9a, 0xe1, 0x38, 0xfe, 0x5b, 0x11, 0x20, 0x7c, 0x41, 0x4f, 0x86, 0xd8, 0x88,
+	0x7c, 0x4f, 0x30, 0x13, 0x2b, 0x74, 0x07, 0x90, 0x85, 0x4d, 0xdb, 0xb2, 0xbd, 0xe1, 0x60, 0x18,
+	0x1a, 0x1e, 0x19, 0xd8, 0x16, 0x0d, 0x81, 0x89, 0x85, 0x96, 0x3e, 0x23, 0x77, 0xb6, 0xe9, 0xc6,
+	0x8e, 0x15, 0x69, 0x9b, 0x30, 0xcb, 0xf4, 0x5b, 0xa7, 0x76, 0x96, 0x4a, 0x7e, 0x0e, 0x8d, 0xef,
+	0x63, 0x1c, 0xda, 0x89, 0xef, 0x2e, 0xa7, 0x06, 0x56, 0xad, 0xa1, 0x4b, 0x34, 0xed, 0x4f, 0x15,
+	0xe8, 0x32, 0x12, 0x89, 0xd0, 0x8b, 0xd0, 0xb4, 0xc4, 0x6f, 0xe1, 0x25, 0x94, 0x12, 0x91, 0x58,
+	0x7a, 0x82, 0x83, 0xae, 0x03, 0xe0, 0x30, 0xf4, 0xc3, 0x81, 0xe9, 0x5b, 0x58, 0xda, 0x8f, 0x41,
+	0x36, 0x7c, 0x0b, 0xa3, 0xdb, 0xd0, 0xe5, 0xdb, 0x2e, 0x8e, 0x22, 0x63, 0x28, 0x23, 0xaf, 0xc3,
+	0x80, 0xbb, 0x1c, 0xa6, 0x6d, 0x03, 0x52, 0x95, 0x11, 0x37, 0x6d, 0x19, 0x1a, 0x21, 0x8e, 0x62,
+	0x87, 0x48, 0x6d, 0xae, 0xa4, 0x82, 0x64, 0x64, 0xd6, 0x25, 0x9e, 0xf6, 0x8f, 0x2a, 0xcc, 0x6c,
+	0x7a, 0xb1, 0x8b, 0x43, 0x1a, 0x9f, 0x1f, 0xc8, 0xf5, 0x3d, 0x68, 0x04, 0x06, 0x21, 0x38, 0xf4,
+	0x84, 0xef, 0xe5, 0x92, 0x3a, 0xdc, 0xb1, 0x5d, 0x9b, 0xf4, 0x6a, 0x37, 0x2b, 0x0b, 0x35, 0x9d,
+	0x2f, 0xd0, 0x97, 0x34, 0xea, 0xb1, 0x63, 0x45, 0xbd, 0x3a, 0x53, 0xe3, 0x93, 0x54, 0x8d, 0xbc,
+	0xac, 0xfc, 0x86, 0x45, 0x9b, 0x1e, 0x09, 0x4f, 0x74, 0x71, 0x0a, 0x3d, 0x00, 0x08, 0xf1, 0x21,
+	0x0e, 0xb1, 0x67, 0xe2, 0xa8, 0xd7, 0xc8, 0x9b, 0x42, 0x97, 0x7b, 0x9b, 0xd6, 0x10, 0xeb, 0x0a,
+	0x6a, 0xff, 0x25, 0xb4, 0x15, 0x7a, 0x68, 0x06, 0x26, 0x8e, 0xf0, 0x89, 0xb0, 0x01, 0xfd, 0x89,
+	0xee, 0xc8, 0x74, 0x50, 0x65, 0x8e, 0xbe, 0xbc, 0xc8, 0x73, 0xe3, 0xa2, 0xcc, 0x8d, 0x8b, 0xdf,
+	0xd2, 0x5d, 0x91, 0x26, 0x1e, 0x55, 0x1f, 0x56, 0x34, 0x13, 0xba, 0x19, 0x7e, 0xe8, 0x06, 0xb4,
+	0x5f, 0xfb, 0x8e, 0x85, 0xc3, 0x01, 0x39, 0x09, 0xb0, 0x20, 0x0e, 0x1c, 0xf4, 0xea, 0x24, 0xc0,
+	0x68, 0x1e, 0x5a, 0x02, 0xc1, 0xb6, 0x84, 0x8d, 0x9b, 0x1c, 0xb0, 0x63, 0xa5, 0x59, 0x6b, 0x42,
+	0xc9, 0x5a, 0xda, 0x0a, 0xcc, 0x2a, 0x86, 0x11, 0xd1, 0x70, 0x1d, 0x80, 0x5f, 0x31, 0x76, 0x2d,
+	0x2a, 0xec, 0x5a, 0xb4, 0x38, 0x84, 0xde, 0x87, 0x1f, 0x27, 0xa0, 0xbb, 0x8f, 0x8d, 0x30, 0xbd,
+	0x0c, 0xff, 0x53, 0xb7, 0xd3, 0xfb, 0x74, 0xc2, 0xdc, 0xde, 0xd2, 0xf9, 0x02, 0xdd, 0x82, 0x0e,
+	0x4b, 0x82, 0x03, 0xc5, 0xf9, 0x2d, 0xbd, 0xcd, 0x60, 0xdc, 0x2d, 0xe8, 0x71, 0x12, 0x19, 0xdc,
+	0xab, 0xb7, 0x53, 0xaf, 0x66, 0x74, 0x39, 0x47, 0x58, 0x34, 0xcf, 0x1d, 0x16, 0xd4, 0x23, 0xae,
+	0xed, 0x0d, 0x22, 0xd3, 0x0f, 0x71, 0xaf, 0x75, 0xb3, 0xb2, 0x50, 0xd1, 0x9b, 0xae, 0xed, 0xed,
+	0xd3, 0x75, 0x1a, 0xc2, 0xa0, 0x84, 0xf0, 0x87, 0x88, 0xa4, 0x7f, 0x57, 0xa0, 0xcd, 0x95, 0xdc,
+	0xa5, 0x16, 0x51, 0x12, 0x6a, 0x45, 0x4d, 0xa8, 0x54, 0x20, 0x2e, 0x69, 0x95, 0x49, 0xca, 0x17,
+	0xc5, 0x81, 0x93, 0x3e, 0x6f, 0x93, 0xca, 0xf3, 0x86, 0x9e, 0x42, 0xd3, 0xc5, 0xc4, 0xb0, 0x0c,
+	0x62, 0xf4, 0x6a, 0xc5, 0x76, 0x66, 0x22, 0x2c, 0xee, 0x0a, 0x2c, 0x6e, 0xe7, 0xe4, 0x50, 0x7f,
+	0x1f, 0xba, 0x99, 0xad, 0xf7, 0xa2, 0xff, 0x1a, 0x4c, 0x49, 0x1f, 0x8b, 0x08, 0x5f, 0x82, 0x06,
+	0x0b, 0x8e, 0x24, 0x7b, 0x5f, 0x2a, 0x14, 0x53, 0x97, 0x58, 0x34, 0x6d, 0x72, 0x78, 0xe6, 0x11,
+	0x58, 0xce, 0x3f, 0x02, 0x57, 0xc6, 0x44, 0x55, 0xfa, 0x0a, 0xfc, 0xb1, 0x02, 0x6d, 0x46, 0x83,
+	0xef, 0x97, 0x96, 0xe4, 0xbd, 0x3c, 0x02, 0x5b, 0xf0, 0x51, 0x46, 0x9b, 0xd4, 0x2a, 0xd9, 0x57,
+	0xe0, 0x52, 0xee, 0x15, 0x10, 0x3a, 0x25, 0x6f, 0xc0, 0x2f, 0xa1, 0xf7, 0x42, 0xa4, 0x05, 0xec,
+	0x11, 0xfb, 0xd0, 0xc6, 0x61, 0x24, 0x6d, 0x73, 0x03, 0xda, 0x22, 0x89, 0xa8, 0xd9, 0x8a, 0x83,
+	0x58, 0xb6, 0xea, 0x41, 0x03, 0xbf, 0x33, 0x9d, 0x98, 0x69, 0x41, 0xef, 0xab, 0x5c, 0x6a, 0x8f,
+	0xe0, 0x6a, 0x01, 0xd9, 0xf3, 0x25, 0xa7, 0x17, 0xf0, 0xd1, 0x26, 0xf5, 0x3c, 0xcd, 0x67, 0xb1,
+	0x93, 0x3c, 0x4c, 0xf3, 0xd0, 0x0a, 0x63, 0x07, 0x0f, 0xde, 0x44, 0xe2, 0xad, 0x6d, 0xe9, 0x4d,
+	0x0a, 0xf8, 0x9a, 0x96, 0x03, 0xf3, 0xd0, 0x4a, 0x48, 0xca, 0xbc, 0x29, 0x29, 0x6a, 0x7f, 0xa9,
+	0xc0, 0x5c, 0x96, 0xa2, 0x10, 0x84, 0x15, 0x17, 0xd4, 0x0e, 0xa2, 0xe6, 0x10, 0x2b, 0x45, 0xf1,
+	0x37, 0x69, 0xe5, 0x21, 0x64, 0x66, 0xec, 0x66, 0x60, 0xc2, 0xf3, 0xdf, 0x0a, 0xc7, 0xd0, 0x9f,
+	0xf4, 0xc8, 0x81, 0x1f, 0x7b, 0x56, 0xc4, 0x8f, 0xf0, 0x2b, 0x05, 0x1c, 0xc4, 0x8e, 0x5c, 0x07,
+	0xf0, 0x7c, 0x82, 0xc5, 0x3e, 0xcf, 0x7d, 0x2d, 0x06, 0xa1, 0xdb, 0xda, 0x2e, 0x5c, 0x4a, 0xb2,
+	0x78, 0x26, 0x40, 0xef, 0xe5, 0x03, 0xb4, 0x3f, 0xfe, 0x41, 0x4c, 0x63, 0x34, 0x86, 0x19, 0x46,
+	0x45, 0x62, 0x88, 0xda, 0xe3, 0x14, 0xb3, 0xbf, 0x97, 0xa8, 0xfc, 0x05, 0x5c, 0xce, 0x6b, 0x21,
+	0x4c, 0x7d, 0x2f, 0x1f, 0x98, 0xfd, 0x5c, 0x60, 0x2a, 0x92, 0xa6, 0xd1, 0xf9, 0x39, 0x4c, 0x6f,
+	0xbe, 0x0b, 0x1c, 0xc3, 0xf6, 0xd4, 0xe0, 0x21, 0xa1, 0x61, 0x66, 0xe2, 0xa0, 0xc5, 0x20, 0xcc,
+	0x8e, 0x3e, 0x00, 0x23, 0xf7, 0x8a, 0x42, 0xce, 0x40, 0x7e, 0x4f, 0x17, 0x71, 0x4e, 0x88, 0x98,
+	0x55, 0x78, 0x31, 0xaf, 0xf0, 0x5c, 0x4e, 0x61, 0x26, 0x61, 0xaa, 0xea, 0xaf, 0xa0, 0xbb, 0xe9,
+	0x11, 0x9b, 0x9c, 0x48, 0xc7, 0xff, 0x1f, 0xd4, 0x0c, 0x5a, 0xd4, 0x8b, 0xba, 0x72, 0x3a, 0x3d,
+	0xce, 0x6a, 0x7d, 0x9d, 0xef, 0xd2, 0xc0, 0xc3, 0xec, 0x5c, 0x26, 0x56, 0x39, 0x88, 0x59, 0x64,
+	0x03, 0x60, 0x1b, 0x93, 0x92, 0x54, 0xa7, 0xa0, 0x9a, 0x5c, 0xa4, 0xaa, 0x6d, 0x69, 0x5b, 0xd0,
+	0x7d, 0x86, 0x1d, 0x9c, 0x96, 0x89, 0x17, 0xa4, 0xb3, 0x0c, 0x53, 0x52, 0x4b, 0x61, 0xa7, 0x9c,
+	0xfc, 0x95, 0x11, 0xf9, 0x57, 0x01, 0xf1, 0x23, 0xbc, 0x37, 0x12, 0xc7, 0xa8, 0x6f, 0x28, 0xd4,
+	0x96, 0x37, 0x8a, 0xc7, 0x73, 0x47, 0x02, 0xd9, 0xd1, 0x97, 0xd0, 0x56, 0x33, 0xc8, 0x39, 0x65,
+	0xce, 0x24, 0x9a, 0x6a, 0x36, 0xd1, 0x68, 0x9f, 0x41, 0x27, 0x93, 0x42, 0x4e, 0xcb, 0x4a, 0xda,
+	0x32, 0xcc, 0x50, 0xe4, 0x8c, 0xe0, 0xd7, 0x01, 0xe8, 0x7e, 0x46, 0x6a, 0x46, 0x82, 0x8b, 0xfc,
+	0xaf, 0x0a, 0x4c, 0xef, 0xdb, 0x6e, 0xec, 0x18, 0xa5, 0x6d, 0x7d, 0x47, 0x16, 0x56, 0xf2, 0x55,
+	0x2d, 0xee, 0x66, 0x44, 0xc1, 0x95, 0x95, 0x63, 0x22, 0x27, 0x07, 0x75, 0x0b, 0x6b, 0xab, 0x92,
+	0x7c, 0x46, 0xf7, 0x81, 0x83, 0x18, 0xc2, 0xff, 0xc3, 0x4c, 0x80, 0x43, 0xd7, 0x8e, 0x68, 0x4f,
+	0x91, 0x64, 0x35, 0x8a, 0x35, 0xad, 0xc0, 0x19, 0xea, 0xa7, 0x30, 0x9d, 0x36, 0xf5, 0x1c, 0x93,
+	0x97, 0x77, 0x53, 0x29, 0x98, 0x29, 0xff, 0x07, 0x98, 0x4b, 0xfb, 0xf6, 0x6f, 0x70, 0xd9, 0xab,
+	0x70, 0x0b, 0x3a, 0x09, 0xc1, 0xf4, 0x1d, 0x68, 0x27, 0xb0, 0x1d, 0x8b, 0x6a, 0x2d, 0xea, 0x5a,
+	0x8a, 0xc0, 0xef, 0x73, 0x4b, 0x40, 0x76, 0x2c, 0xed, 0x6f, 0x15, 0x98, 0xa5, 0xde, 0x62, 0x8d,
+	0x63, 0x54, 0x92, 0x7d, 0x96, 0x76, 0x35, 0x47, 0x5b, 0x69, 0xe7, 0x27, 0x4e, 0x6f, 0xe7, 0x59,
+	0x71, 0x77, 0x78, 0x18, 0x61, 0xde, 0x2d, 0xd7, 0x74, 0xb1, 0x2a, 0x6e, 0x98, 0xb4, 0x1f, 0x00,
+	0xa9, 0x22, 0x97, 0xb8, 0x1f, 0x94, 0x20, 0xf1, 0x89, 0x28, 0xeb, 0x6b, 0x3a, 0x5f, 0x28, 0xec,
+	0x27, 0x8a, 0xd9, 0x4f, 0xaa, 0xec, 0x6d, 0x40, 0xaf, 0xb0, 0x1b, 0xd0, 0x78, 0x2d, 0xef, 0x31,
+	0x04, 0x93, 0x9e, 0xe1, 0xca, 0xd4, 0xcb, 0x7e, 0xd3, 0xa2, 0xe2, 0x18, 0x87, 0x91, 0x6c, 0x29,
+	0x6a, 0xba, 0x5c, 0x6a, 0x7f, 0xad, 0xc2, 0xdc, 0x5a, 0x10, 0x38, 0x27, 0x92, 0xe1, 0x87, 0xe4,
+	0xa6, 0x76, 0x44, 0x93, 0xd9, 0x8e, 0x68, 0x1d, 0xea, 0x81, 0x11, 0x1a, 0x6e, 0x24, 0x0a, 0xe4,
+	0x9f, 0x28, 0xfc, 0x0a, 0xc4, 0x5b, 0xdc, 0x63, 0xc8, 0xa2, 0x1f, 0xe1, 0x27, 0xd1, 0x27, 0x30,
+	0x2d, 0xc7, 0x16, 0x83, 0x20, 0xc4, 0x87, 0xf6, 0xbb, 0x5e, 0x9d, 0x71, 0xe9, 0x0e, 0xf9, 0xd0,
+	0x62, 0x8f, 0x01, 0xfb, 0xab, 0xd0, 0x56, 0x8e, 0x17, 0xd4, 0xd2, 0x73, 0x6a, 0x2d, 0xdd, 0x52,
+	0x6b, 0xe6, 0xef, 0x60, 0x76, 0x3d, 0x76, 0x8e, 0x2e, 0x14, 0xcb, 0xb9, 0xeb, 0x5f, 0xcd, 0x5f,
+	0x7f, 0xed, 0xf7, 0x70, 0x85, 0x12, 0xe7, 0x8f, 0xc2, 0x85, 0x58, 0xcc, 0x43, 0x2b, 0x1d, 0xdc,
+	0x70, 0x06, 0xcd, 0xa1, 0x1c, 0xd8, 0xdc, 0x87, 0xee, 0xe6, 0xbb, 0xc0, 0x0f, 0x4b, 0xbe, 0x5b,
+	0xda, 0x17, 0x30, 0x25, 0xcf, 0xa5, 0x17, 0xc1, 0xf2, 0xcd, 0xd8, 0xc5, 0x1e, 0x51, 0x93, 0x74,
+	0x47, 0x02, 0x99, 0x36, 0xdf, 0x41, 0x77, 0xc7, 0x2d, 0xcf, 0x6e, 0x94, 0x78, 0xb5, 0x80, 0xf8,
+	0x3f, 0x2b, 0x30, 0xfb, 0x92, 0xe6, 0xdc, 0xb5, 0xd8, 0xb2, 0x49, 0xf9, 0x9c, 0xc6, 0xb3, 0xc2,
+	0x80, 0x63, 0x8b, 0x9c, 0xc6, 0x61, 0x7c, 0xe8, 0xa7, 0x04, 0xea, 0x44, 0x36, 0x50, 0x69, 0x7d,
+	0x73, 0x4c, 0x65, 0x63, 0xf5, 0xfb, 0xa4, 0xa8, 0x6f, 0x28, 0x44, 0x96, 0xef, 0x7e, 0x4c, 0x4c,
+	0xdf, 0xc5, 0xa2, 0x1e, 0x95, 0x4b, 0xd6, 0x46, 0xda, 0x9e, 0x89, 0x45, 0x4c, 0xf2, 0x05, 0x85,
+	0xc6, 0x1e, 0xb1, 0x9d, 0x5e, 0x83, 0x43, 0xd9, 0x22, 0x4d, 0x0b, 0x4d, 0x35, 0x2d, 0x7c, 0x01,
+	0x48, 0xd5, 0x59, 0x79, 0xec, 0x29, 0xfb, 0x4c, 0x4e, 0xe2, 0x32, 0xf2, 0xb0, 0x7a, 0x0e, 0xdd,
+	0x75, 0x1c, 0x11, 0xff, 0xad, 0x34, 0xd3, 0x35, 0x68, 0x59, 0xd8, 0xc1, 0x43, 0x43, 0x9a, 0xaa,
+	0xa5, 0xa7, 0x00, 0xaa, 0x20, 0x8f, 0x21, 0xc5, 0xf8, 0x3c, 0xaa, 0x18, 0xb5, 0xaf, 0xa0, 0xab,
+	0xe3, 0x63, 0xff, 0x08, 0x9f, 0x8f, 0xda, 0x55, 0x68, 0xca, 0x88, 0x94, 0x03, 0x52, 0x11, 0x90,
+	0xda, 0x0f, 0x70, 0x75, 0xc7, 0x0d, 0x70, 0x18, 0xf9, 0x1e, 0x2b, 0x51, 0xf7, 0x89, 0x91, 0x06,
+	0x4b, 0x1f, 0x9a, 0x7e, 0x40, 0x6b, 0xd7, 0x84, 0x68, 0xb2, 0xa6, 0xc9, 0x94, 0x18, 0xe1, 0x10,
+	0xcb, 0x91, 0xab, 0x58, 0x9d, 0xe2, 0x34, 0x04, 0x93, 0x2e, 0x2d, 0x47, 0xb9, 0xbb, 0xd8, 0x6f,
+	0xed, 0xef, 0x15, 0x98, 0xcb, 0xf2, 0xc7, 0x91, 0x9c, 0x27, 0x86, 0xd8, 0x70, 0x06, 0x69, 0x28,
+	0xd1, 0x57, 0x1c, 0x1b, 0x4e, 0x12, 0x1a, 0x51, 0xcc, 0xe7, 0x04, 0x42, 0x21, 0xb1, 0x2c, 0xc7,
+	0x9f, 0xb2, 0x89, 0xa8, 0xc6, 0xd8, 0x1a, 0x18, 0x44, 0x36, 0x2f, 0x02, 0xb2, 0xc6, 0xe3, 0xec,
+	0x5d, 0x60, 0x87, 0x38, 0xa2, 0xdb, 0x75, 0x11, 0x67, 0x1c, 0xb2, 0x46, 0xb4, 0x00, 0x7a, 0x39,
+	0xe3, 0xf9, 0xc1, 0x79, 0x6c, 0xf7, 0x10, 0x1a, 0x11, 0xd7, 0x53, 0x94, 0x34, 0x1f, 0xa7, 0x97,
+	0xa4, 0xc8, 0x1a, 0xba, 0x44, 0x5f, 0xf9, 0xf1, 0x06, 0x4c, 0xaf, 0x09, 0xd4, 0x7d, 0xfe, 0x69,
+	0x03, 0xdd, 0x85, 0x1a, 0xab, 0x83, 0xd0, 0x98, 0xc2, 0xa8, 0x5f, 0x30, 0xb9, 0x45, 0xdb, 0x00,
+	0xe9, 0xac, 0x15, 0xcd, 0xe7, 0x4e, 0xaa, 0x8d, 0x5a, 0xff, 0x5a, 0xf1, 0xa6, 0x88, 0xfc, 0x67,
+	0xd0, 0x4a, 0x3a, 0x23, 0x74, 0x4a, 0x0b, 0xd7, 0x9f, 0x2f, 0xdc, 0x13, 0x54, 0xf6, 0x69, 0xf9,
+	0xac, 0xf6, 0x57, 0xe8, 0x46, 0x01, 0x7a, 0x46, 0xac, 0x9b, 0xe3, 0x11, 0x04, 0xd1, 0xc7, 0x50,
+	0x17, 0x93, 0x8c, 0x71, 0xb3, 0x8f, 0x7e, 0x6f, 0x74, 0x43, 0x1c, 0xfe, 0x5a, 0xce, 0xa5, 0xb8,
+	0x38, 0xd7, 0xf2, 0x88, 0x19, 0x59, 0xae, 0x8f, 0xd9, 0x15, 0xb4, 0x9e, 0x40, 0x43, 0xb4, 0x52,
+	0x63, 0x7d, 0x74, 0x55, 0xd1, 0x26, 0xd7, 0x18, 0x7e, 0x03, 0x1d, 0xb5, 0x11, 0x3b, 0xdd, 0x59,
+	0x1f, 0x8f, 0xd0, 0xc9, 0x8a, 0xf2, 0x14, 0x3a, 0xea, 0xf7, 0x2c, 0xa4, 0xa4, 0x67, 0xf6, 0xc5,
+	0x4b, 0x25, 0x50, 0xf8, 0xe1, 0x6b, 0x15, 0xba, 0x7b, 0x31, 0x79, 0x91, 0xce, 0x4a, 0xae, 0xa8,
+	0x7e, 0x50, 0xfa, 0xbc, 0x7e, 0x9e, 0x34, 0x7a, 0x0a, 0xdd, 0x6d, 0xac, 0x1e, 0x55, 0x3a, 0xc7,
+	0xb4, 0x93, 0x53, 0x7d, 0x92, 0x6b, 0xa9, 0xb6, 0x60, 0x9a, 0x56, 0x84, 0x29, 0x85, 0x08, 0x29,
+	0x63, 0x20, 0xe5, 0x13, 0x93, 0x1a, 0xb3, 0x05, 0x3d, 0xd6, 0x13, 0x98, 0xe1, 0xef, 0x7b, 0xb1,
+	0x1a, 0x99, 0x86, 0x70, 0x54, 0x8d, 0xdf, 0xc1, 0xec, 0xc8, 0x08, 0x08, 0x69, 0x29, 0xd6, 0xb8,
+	0xb1, 0x53, 0xff, 0xf6, 0xa9, 0x38, 0x19, 0xfb, 0xee, 0x25, 0x9d, 0x46, 0x69, 0xfb, 0x2a, 0x47,
+	0x2f, 0x68, 0xdf, 0x94, 0xc2, 0x7f, 0x6b, 0xdf, 0x62, 0x35, 0xce, 0xb0, 0xef, 0x43, 0xe8, 0x50,
+	0x0b, 0x24, 0x93, 0xf8, 0xf3, 0x1b, 0xe0, 0x4b, 0xe8, 0x50, 0x03, 0x24, 0x27, 0xcb, 0xea, 0xbf,
+	0x09, 0x53, 0x4c, 0xff, 0xf4, 0x83, 0xec, 0x85, 0xd4, 0x7f, 0x0c, 0xd3, 0x42, 0xfd, 0x22, 0x1d,
+	0xce, 0xd0, 0xfe, 0x2e, 0x34, 0xf6, 0x62, 0xa2, 0xfb, 0x4e, 0x99, 0x9b, 0xb5, 0x0a, 0x0d, 0xaa,
+	0x20, 0x3d, 0x54, 0x56, 0xe7, 0x9f, 0x43, 0x8b, 0x09, 0xef, 0x3b, 0x17, 0xbd, 0x4d, 0xf7, 0x01,
+	0x84, 0x4e, 0x39, 0xa1, 0xcf, 0xd0, 0xf4, 0x1e, 0x34, 0xf7, 0x62, 0xb2, 0x1d, 0xfa, 0x71, 0x50,
+	0x42, 0xd5, 0x47, 0xd0, 0xdc, 0xc6, 0xe2, 0x54, 0x59, 0x5d, 0xd7, 0x00, 0x78, 0x47, 0xe9, 0xc7,
+	0xc1, 0x05, 0x95, 0x7d, 0x00, 0x6d, 0xd9, 0x1a, 0xe4, 0xe4, 0x3e, 0x43, 0xdb, 0xfb, 0x00, 0x7b,
+	0x31, 0x11, 0x7f, 0x0b, 0x28, 0xa1, 0xef, 0x13, 0x36, 0xe5, 0x92, 0xe7, 0xca, 0x6a, 0xbc, 0x01,
+	0x1d, 0x2a, 0x7e, 0xf2, 0x6f, 0x84, 0x0b, 0xe9, 0xbc, 0x2a, 0x67, 0x64, 0x05, 0xd2, 0x9f, 0xa1,
+	0xf5, 0x32, 0x8f, 0xe6, 0xd8, 0xc1, 0x2a, 0x6b, 0x65, 0x76, 0x35, 0x7a, 0xe4, 0x01, 0x8f, 0xe5,
+	0x78, 0x6c, 0x2c, 0x5f, 0xce, 0x13, 0x12, 0x62, 0x3e, 0x14, 0x91, 0x1c, 0x3b, 0x45, 0xef, 0x5a,
+	0x3f, 0x7b, 0x6a, 0x4c, 0x04, 0xc7, 0xa5, 0x22, 0xf8, 0x3e, 0x74, 0xbe, 0x35, 0x1c, 0xdb, 0x12,
+	0xe3, 0xf7, 0x73, 0xab, 0xb8, 0x0a, 0x4d, 0x39, 0x0a, 0x43, 0xca, 0xc3, 0x9f, 0x1b, 0x8f, 0x8d,
+	0xa9, 0xdb, 0x92, 0x29, 0x9a, 0x2c, 0x29, 0x4e, 0xa1, 0x70, 0x4a, 0x55, 0xb1, 0x0b, 0x1d, 0xf5,
+	0xd3, 0x01, 0x52, 0x4a, 0x98, 0x82, 0x8f, 0x14, 0x99, 0xba, 0xa2, 0xe8, 0x8b, 0x03, 0x7f, 0xb6,
+	0xd2, 0x21, 0x57, 0x89, 0x08, 0xdf, 0x90, 0xaf, 0x85, 0x72, 0x5a, 0x61, 0x57, 0x34, 0x38, 0x1b,
+	0x9f, 0x4c, 0x8c, 0x52, 0x97, 0x4b, 0x26, 0x13, 0xe3, 0x02, 0x57, 0x6b, 0x5b, 0x26, 0x13, 0x83,
+	0x5e, 0xac, 0xf9, 0xec, 0xc5, 0xca, 0x0c, 0x0e, 0xd4, 0xeb, 0x55, 0x30, 0xd1, 0x52, 0x52, 0x8a,
+	0x51, 0xea, 0x72, 0x3d, 0x80, 0xf6, 0x5e, 0x4c, 0xe4, 0x50, 0xa6, 0x84, 0xda, 0x9b, 0xd0, 0xde,
+	0xc6, 0xe9, 0x41, 0x45, 0xbc, 0xd1, 0x89, 0xd7, 0x29, 0x16, 0x78, 0x06, 0x5d, 0xaa, 0x8e, 0x3c,
+	0x73, 0xc1, 0xec, 0xf2, 0x14, 0xa6, 0xb8, 0x9e, 0xe7, 0x94, 0x67, 0x44, 0x9b, 0x5d, 0xe8, 0x66,
+	0xa6, 0x53, 0x6a, 0xf0, 0x14, 0x8d, 0xad, 0xce, 0x90, 0xe7, 0x67, 0xd0, 0x5d, 0x8f, 0x9d, 0x23,
+	0x19, 0x4d, 0x19, 0xd7, 0x8e, 0x8c, 0x9d, 0x46, 0xa5, 0xd9, 0x82, 0x99, 0xfc, 0xfc, 0x08, 0xdd,
+	0xca, 0x52, 0x28, 0x98, 0x2d, 0x8d, 0xd2, 0x79, 0x0c, 0x75, 0x3e, 0xf0, 0xc9, 0xf8, 0x55, 0x1d,
+	0x1d, 0x65, 0x3c, 0x93, 0x9d, 0x0d, 0xad, 0x40, 0x9d, 0x8f, 0x7d, 0xd4, 0xc3, 0x99, 0x41, 0xd0,
+	0x28, 0xc3, 0x6d, 0x80, 0x74, 0xb0, 0xa1, 0x2a, 0x3d, 0x32, 0xe2, 0x51, 0x0d, 0x58, 0x30, 0x0b,
+	0x59, 0x81, 0x3a, 0x1f, 0x75, 0xa8, 0xcc, 0x33, 0xc3, 0x8f, 0x51, 0xe6, 0x2b, 0x50, 0xe7, 0x03,
+	0x0d, 0x94, 0xf9, 0xef, 0x82, 0x32, 0xe2, 0x18, 0x3d, 0xf3, 0x1b, 0x40, 0xa3, 0xa3, 0x0b, 0x74,
+	0x7b, 0x5c, 0x2b, 0xad, 0x0c, 0x36, 0xfa, 0x67, 0xf4, 0xdb, 0xe8, 0x2b, 0x98, 0x1d, 0x69, 0xec,
+	0xd5, 0x12, 0x7f, 0x5c, 0xd7, 0x3f, 0x22, 0xe4, 0xfa, 0xdd, 0xdf, 0x2e, 0x0f, 0x6d, 0xf2, 0x3a,
+	0x3e, 0x58, 0x34, 0x7d, 0x77, 0xe9, 0x30, 0x34, 0xbc, 0xa3, 0x03, 0x23, 0xb4, 0x7c, 0x6f, 0x49,
+	0x22, 0x2e, 0xd9, 0x1e, 0xc1, 0xa1, 0x67, 0x38, 0x4b, 0x6f, 0xed, 0x10, 0x2f, 0x85, 0x81, 0x79,
+	0x50, 0x67, 0xff, 0x17, 0xb8, 0xfb, 0x9f, 0x00, 0x00, 0x00, 0xff, 0xff, 0x04, 0x24, 0xfc, 0x9a,
+	0xbe, 0x28, 0x00, 0x00,
 }

@@ -21,6 +21,8 @@ const (
 	ToolCheckBatch     = "aperture_check_batch"
 	ToolEnumerate      = "aperture_enumerate"
 	ToolEnumerateBatch = "aperture_enumerate_batch"
+	ToolSearch         = "aperture_search"
+	ToolSearchBatch    = "aperture_search_batch"
 	ToolExplain        = "aperture_explain"
 	ToolExplainBatch   = "aperture_explain_batch"
 
@@ -52,6 +54,8 @@ const (
 	DescCheckBatch      = "Decide many (account, principal, action, object) questions in one round-trip. Returns results aligned with the input queries (results[i] answers queries[i]); a single ill-formed query carries its error in that item without failing the batch. Use when authorizing a set of objects at once."
 	DescEnumerate       = "List the object ids under a pattern that a principal may take an action on, in an account — the inverse of aperture_check. Every returned id is one aperture_check would allow (deny-overrides and specificity are honoured, so a denied object is never returned). Bounded by limit. Use to answer 'which of these may alice read?'."
 	DescEnumerateBatch  = "Enumerate accessible objects for many queries in one round-trip, aligned with the input queries. A query that errors carries its error in its item; the rest are unaffected."
+	DescSearch          = "Resolve a NAME to an object id: rank the objects a principal may take an action on, in an account, by how well their metadata matches free text — the lookup to do when a question arrives in a person's own words. Every returned object is one aperture_check would allow, because candidates are decided BEFORE they are scored: the result is always a subset of aperture_enumerate's for the same subject, action and pattern. Matching is case- and punctuation-insensitive and tolerates a typo. A score RANKS candidates for choosing between; it is never a permission, so still check an id before acting on it. Use this to turn 'Nike' into 'account:acme/brand:42'; use aperture_enumerate when you want the whole entitled set."
+	DescSearchBatch     = "Resolve many names to object ids in one round-trip, aligned with the input queries (results[i] answers queries[i]). A query that errors carries its error in its item; the rest are unaffected. Use when one sentence names several things — a brand and a category, say."
 	DescExplain         = "Return the full structured decision trace for a single question: the principal's expanded subject set, every grant considered with its per-grant outcome (action match, coverage, specificity), which grants decided the verdict, and the final decision. Use when you need to understand WHY a decision came out the way it did, not just the verdict."
 	DescExplainBatch    = "Return decision traces for many questions in one round-trip, aligned with the input queries. A query that errors carries its error in its item."
 	DescSimulate        = "What-if: render the decision (full trace) for a question as it WOULD be under a hypothetical overlay of principals, groups, permissions, grants, and memberships — WITHOUT writing anything. The overlay is additive; an overlay entity with the same id as a stored one shadows it, so you can model 'what if I bestowed this grant' or 'what if alice had this role'. Nothing is persisted and nothing is audited. Use to preview the effect of a change before making it."
@@ -86,6 +90,8 @@ func Meta() []ToolMeta {
 		{Name: ToolCheckBatch, Description: DescCheckBatch},
 		{Name: ToolEnumerate, Description: DescEnumerate},
 		{Name: ToolEnumerateBatch, Description: DescEnumerateBatch},
+		{Name: ToolSearch, Description: DescSearch},
+		{Name: ToolSearchBatch, Description: DescSearchBatch},
 		{Name: ToolExplain, Description: DescExplain},
 		{Name: ToolExplainBatch, Description: DescExplainBatch},
 		{Name: ToolSimulate, Description: DescSimulate},

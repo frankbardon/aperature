@@ -1,18 +1,18 @@
 ---
 name: decision-api
-description: The full decision API beyond Check — Enumerate (which objects a principal may act on), Explain (the structured decision trace), and bulk-batched forms of all three, all behind one service facade.
+description: The full decision API beyond Check — Enumerate (which objects a principal may act on), Search (which of them a person is naming), Explain (the structured decision trace), and bulk-batched forms of all four, all behind one service facade.
 applies_to: [engine, service, twirp, mcp, what-if]
 ---
 
 # Decision API
 
-Aperture's Policy Decision Point answers three questions, each single and
+Aperture's Policy Decision Point answers four questions, each single and
 bulk-batched (FR-10). All surfaces — the HTTP/Twirp service (E4-S1), the MCP
 read-and-simulate tools (E4-S3), and the what-if simulator (E6-S4) — call ONE
 facade (`service.Service`) over the engine, so the fail-closed policy and the
 trace contract live in one place.
 
-## The three ops
+## The four ops
 
 - **Check** `(account, principal, action, object) -> Decision{Allow, Reason,
   DecidingGrantIDs}`. The enforcement gate; deny-overrides with a specificity
@@ -21,13 +21,23 @@ trace contract live in one place.
   The inverse of Check: which objects under `pattern` the principal may act on,
   optionally narrowed by object-metadata predicates (`fields`). Every id returned
   is one Check would allow.
+- **Search** `(account, principal, action, pattern, query, ...) -> []SearchResult`.
+  Which of the objects `Enumerate` would return are the ones a person means when
+  they type `query`, ranked best first. Candidates are DECIDED before they are scored — it
+  walks the same pipeline — so the result is always a SUBSET of Enumerate's for
+  the same subject, action and pattern. A score ranks; nothing authorizes on it.
+  The full account is `skills/object-search.md`.
 - **Explain** `(account, principal, action, object) -> Trace`. The full
   derivation: the subject set, every grant considered with its per-grant
   outcome, which grants decided the verdict, and the final Decision.
 
-Each has a bulk form — `CheckBatch`, `EnumerateBatch`, `ExplainBatch` — that
-takes many queries and returns results **aligned by index** (`result[i]` for
-`query[i]`).
+Each has a bulk form — `CheckBatch`, `EnumerateBatch`, `SearchBatch`,
+`ExplainBatch` — that takes many queries and returns results **aligned by index**
+(`result[i]` for `query[i]`).
+
+Beside them sits one non-decision bulk read: `ObjectMetadataBatch` labels N ids
+in one call, aligned the same way. It authorizes nothing and discovers nothing —
+see `skills/object-search.md`.
 
 ## Account isolation & membership
 
@@ -175,6 +185,16 @@ disagreeing about the same question, with nothing in either answer saying so.
 (`aperture attributes` builds the same stack but reads attribute *directories*,
 which this bound never governs, so it carries no flag that would change nothing
 it prints.)
+
+### Search scans under the same bound, and truncates separately
+
+`Search` runs its scan under exactly this bound, over exactly this candidate set
+— it walks the same pipeline. Its own `Limit` is a SECOND number that caps the
+returned MATCHES, applied to the finished ranking rather than to the scan:
+bounding the scan by `Limit` would return the first N objects that matched at
+all rather than the N best. The scan raises its own on-bound warning, worded for
+the case where a better match may lie past the bound. See
+`skills/object-search.md`.
 
 ### A result on the bound is a warning, not a flag
 

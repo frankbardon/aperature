@@ -39,6 +39,8 @@ tool identity), so the SDK-free core and the SDK adapter never drift.
 | `aperture_check_batch` | Decide many `(account, principal, action, object)` questions in one round-trip; `results[i]` answers `queries[i]`. A single ill-formed query carries its error in that item without failing the batch. | `service.CheckBatch` |
 | `aperture_enumerate` | List the object ids under a pattern a principal may act on — the inverse of `aperture_check`. Deny-overrides and specificity are honoured, so a denied object is never returned. Takes an optional `Fields` metadata filter and optional `References` edges (both below). | `service.Enumerate` |
 | `aperture_enumerate_batch` | Enumerate accessible objects for many queries in one round-trip, aligned with the input queries. Each query carries its own `Fields` and `References`. | `service.EnumerateBatch` |
+| `aperture_search` | Resolve a **name** to an object id: rank the objects a principal may act on by how well their metadata matches free text. Candidates are *decided before they are scored*, so the result is always a subset of `aperture_enumerate`'s for the same subject, action and pattern. Matching tolerates case, punctuation and a typo. A score **ranks; it never authorizes.** | `service.Search` |
+| `aperture_search_batch` | Resolve many names in one round-trip, aligned with the input queries — for a sentence that names several things. | `service.SearchBatch` |
 | `aperture_explain` | Return the full structured decision trace for one question: the expanded subject set, every grant considered with its per-grant outcome, which grants decided, and the final verdict. Use to understand *why*. | `service.Explain` |
 | `aperture_explain_batch` | Return decision traces for many questions in one round-trip, aligned with the input queries. | `service.ExplainBatch` |
 
@@ -162,6 +164,26 @@ The answers an agent must not over-read:
 Grants are account-scoped by design: `aperture_list_grants` requires an
 `account` argument and never returns another account's grants, so the surface
 cannot leak cross-account data.
+
+### Name resolution, and the two things an agent must not assume
+
+`aperture_search` exists because an agent receives questions in a person's words
+and needs ids. Two properties are stated in the tool's own description, because
+an agent has no other source of truth and both failure modes are silent:
+
+1. **A score is not a permission.** It ranks candidates so the agent can pick one
+   or ask which was meant. An id still goes through `aperture_check` before it is
+   acted on.
+2. **The result is already scoped.** There is nothing to filter afterwards, and
+   an object missing from the result is one this principal may not see — not a
+   matching failure to work around by enumerating the type and filtering locally.
+   That workaround is precisely the bare-enumeration shape the surface exists to
+   remove.
+
+`Query` is required; there is no "match everything". For the whole entitled set
+the tool is `aperture_enumerate`. Each match carries the object's full metadata
+inline, so an agent should not follow up with per-id metadata reads to label what
+it found.
 
 ## Inputs, outputs, and errors
 

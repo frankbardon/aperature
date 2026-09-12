@@ -30,6 +30,7 @@
 | [`mcp`](#aperture-mcp) | Serve the read-only Aperture MCP surface over stdio |
 | [`put`](#aperture-put) | Create or update an entity (object-type\|permission\|principal\|role\|group\|account\|membership\|grant) |
 | [`revoke`](#aperture-revoke) | Revoke a grant you previously bestowed |
+| [`search`](#aperture-search) | Rank the objects a principal may act on by a free-text name |
 | [`serve`](#aperture-serve) | Run the Aperture HTTP server |
 | [`template`](#aperture-template) | Manage and apply provisioning templates |
 
@@ -484,6 +485,60 @@ aperture revoke [options]
 | `--grant` | — | string | — | id of the grant to revoke (**required**) |
 | `--seed` | — | string | — | path to a JSON/YAML seed model (defaults to the embedded example) |
 | `--store` | — | string | — | DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path |
+
+## `aperture search`
+
+Rank the objects a principal may act on by a free-text name
+
+Ranks every object id under &lt;pattern&gt; that &lt;principal&gt; may take &lt;action&gt; on AND
+whose metadata matches &lt;query&gt;, best match first.
+
+Every result is one `aperture check` would allow: candidates are DECIDED before they
+are scored, by the same walk `aperture enumerate` uses, so the result is always a
+subset of what that command returns. A score ranks; it authorizes nothing.
+
+Matching is case- and punctuation-insensitive ("Nike, Inc." matches "nike inc") and
+tolerates a typo or a transposition on tokens long enough for one to be unambiguous.
+Only TEXT is matched — a string field and the string elements of a list field. Match
+a number, bool, or date with --field instead.
+
+Aperture has no notion of a "label": a label is an ordinary metadata field whose name
+your host chose. By default every field holding text is searched; --in names the ones
+to search, and each result reports which field actually matched.
+
+```text
+  aperture search alice read 'account:acme/brand:*' nike
+  aperture search alice read 'account:acme/brand:*' nike --in label --limit 5
+```
+
+--field / --fields-json and --via mean exactly what they mean on `enumerate`, and they
+COMPOSE with the query: the predicate and the reference edge narrow the candidate set,
+the query ranks what is left. "The brand called Nike in dataset X" is one call.
+
+--min-score drops weak matches (default 0.4). Raising it narrows the shortlist; it
+never widens what the principal may see.
+
+--limit caps how many MATCHES come back — the top of a finished ranking, not a bound
+on the scan, so the best N are returned rather than the first N found. The scan itself
+runs to the deployment's --enumerate-limit ceiling.
+
+```
+aperture search [options] <principal> <action> <pattern> <query>
+```
+
+| Name | Aliases | Type | Default | Usage |
+| --- | --- | --- | --- | --- |
+| `--account` | — | string | `"acme"` | active account the search is scoped to |
+| `--enumerate-limit` | — | string | — | maximum number of object ids one enumeration returns, and the ceiling a larger request limit is clamped down to. It configures the PROCESS, not the command: serve and every one-shot decision command honour the same value (a whole number greater than zero; default 1000; overrides APERTURE_ENUMERATE_LIMIT) (env: `APERTURE_ENUMERATE_LIMIT`) |
+| `--field` | — | string | — | object-metadata predicate as key=value, repeatable; the value is ALWAYS a string, so --field seats=5 matches the string "5" and never the number 5 (use --fields-json for that). Overrides --fields-json on a key collision |
+| `--fields-json` | — | string | — | object-metadata predicates as a JSON object, for values that are genuinely a number, bool, or list (e.g. '{"seats":5,"active":true,"tags":["a"]}'). Merged first; --field entries then override by key |
+| `--in` | — | string | — | restrict matching to this metadata field; repeatable (default: every field holding text) |
+| `--limit` | — | int | `0` | cap the number of returned MATCHES for THIS request, clamped down to the deployment's --enumerate-limit ceiling (&lt;=0 means that ceiling, which is 1000 unless configured) |
+| `--min-score` | — | float | `0` | drop matches scoring below this, 0 to 1 (&lt;=0 means the default, 0.4) |
+| `--scores` | — | bool | — | print the score and the matching field/value alongside each id |
+| `--seed` | — | string | — | path to a JSON/YAML seed model (defaults to the embedded example) |
+| `--store` | — | string | — | DSN for the backing store: a postgres:// or postgresql:// URL for PostgreSQL, any other value as a SQLite path (defaults to in-memory). Set APERTURE_POSTGRES_SCHEMA to place Aperture's tables in a named PostgreSQL schema; unset uses the connection's search_path |
+| `--via` | — | string | — | restrict the result to the objects a holder's declared reference field names, as &lt;holder-identity&gt;.&lt;field&gt; (e.g. --via account:acme/dataset:x.current_brands); repeatable, and several edges are ANDed. The FIELD is everything after the LAST '.' |
 
 ## `aperture serve`
 

@@ -75,6 +75,8 @@ func invokers(_ Config) map[string]InvokeFunc {
 		toolmeta.ToolCheckBatch:      makeInvoke(handleCheckBatch),
 		toolmeta.ToolEnumerate:       makeInvoke(handleEnumerate),
 		toolmeta.ToolEnumerateBatch:  makeInvoke(handleEnumerateBatch),
+		toolmeta.ToolSearch:          makeInvoke(handleSearch),
+		toolmeta.ToolSearchBatch:     makeInvoke(handleSearchBatch),
 		toolmeta.ToolExplain:         makeInvoke(handleExplain),
 		toolmeta.ToolExplainBatch:    makeInvoke(handleExplainBatch),
 		toolmeta.ToolSimulate:        makeInvoke(handleSimulate),

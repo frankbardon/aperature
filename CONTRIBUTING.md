@@ -15,7 +15,10 @@ Thanks for your interest in contributing.
 - Go 1.26.1
 - `CGO_ENABLED=0` — Aperture is pure-Go end to end.
 - `staticcheck` (optional locally; CI installs it). `make lint` degrades to
-  `go vet` only when no static analyser is on PATH.
+  `go vet` only when no USABLE static analyser is on PATH — absent, or present
+  but unable to start (a `golangci-lint` built with an older Go than this module
+  targets refuses to run). The degrade is loud and says static analysis did not
+  run; it never swallows a real finding.
 
 ```bash
 make build   # build bin/aperture

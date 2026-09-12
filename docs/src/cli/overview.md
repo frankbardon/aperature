@@ -21,7 +21,7 @@ name — this guide never re-tabulates them, so the two never drift.
 
 | Family | Commands | What it does |
 |---|---|---|
-| [Decisions](decisions.md) | `check`, `enumerate`, `explain`, `identifiers` | Ask and audit access-control questions (read-only). |
+| [Decisions](decisions.md) | `check`, `enumerate`, `search`, `explain`, `identifiers` | Ask and audit access-control questions (read-only). |
 | [Mutations](mutations.md) | `put`, `get`, `list`, `delete`, `bestow`, `revoke`, `impersonate` | Read and change the model — entities, grants, delegation, impersonation. |
 | [Provisioning](provisioning.md) | `template`, `bulk` | Apply parameterized templates and transactional bulk grant/revoke. |
 | [Portability](portability.md) | `export`, `import` | Serialize the whole model to a state file and apply it back. |
