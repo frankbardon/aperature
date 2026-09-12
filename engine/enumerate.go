@@ -180,6 +180,44 @@ func (e *Engine) Enumerate(ctx context.Context, req EnumerateRequest) ([]string,
 // which under become is the target (see elevatedSubjects). The two are the same
 // value on the ordinary path and deliberately differ under become.
 func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest, subject effectivePrincipal, query identity.Pattern, subjects []model.Subject) ([]string, error) {
+	limit := e.boundEnumerateLimit(req.Limit)
+	// Sized to the SMALLER of the bound and a modest floor. The bound is routinely
+	// 1000 while most enumerations return a handful, and preallocating the bound
+	// would charge every small result 16KB it never uses; append's growth from
+	// here costs a few copies on the rare enumeration that really does fill it,
+	// against a per-candidate decision that dwarfs them.
+	out := make([]string, 0, min(limit, 64))
+	err := e.walkAllowed(ctx, req, subject, query, subjects, func(obj identity.Identity, _ provider.Metadata) (bool, error) {
+		out = append(out, obj.String())
+		// Stop the walk the moment the caller's bound is full. Everything that
+		// could SUBTRACT from the result — the reference restriction, the
+		// decision, the Fields predicate — has already run on this candidate
+		// inside the walk, so truncating here truncates a finished answer.
+		return len(out) < limit, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	e.warnAtEnumerateBound(ctx, req, limit, len(out))
+	return out, nil
+}
+
+// walkAllowed is the enumeration pipeline itself, shared by Enumerate and
+// Search: it gathers the candidate set, decides every candidate exactly as Check
+// would, applies the reference restriction and the Fields predicate, and hands
+// each SURVIVOR to yield in canonical-id order. yield returns false to stop the
+// walk early.
+//
+// It exists so that "which objects may this subject act on?" has ONE
+// implementation. Search is a ranking over the answer to that question, not a
+// second answer to it: if the two walked separately, a search could propose an
+// object an enumeration would have withheld, and the ranked shortlist a chat
+// surface renders would be the one place the entitlement model did not hold.
+//
+// The metadata handed to yield is the candidate's bag when the walk already paid
+// to fetch it (a Fields predicate did), and nil otherwise — a caller that needs
+// it unconditionally fetches it itself, through the same cached source.
+func (e *Engine) walkAllowed(ctx context.Context, req EnumerateRequest, subject effectivePrincipal, query identity.Pattern, subjects []model.Subject, yield func(identity.Identity, provider.Metadata) (bool, error)) error {
 	// One reference instant for the WHOLE enumeration — the member gather and
 	// every per-candidate decision underneath it. A rule-backed Enumerate
 	// evaluates its rule twice per candidate, so this is where a long-running
@@ -197,11 +235,10 @@ func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest
 
 	grants, err := e.store.GrantsForSubjects(ctx, req.Account, subjects)
 	if err != nil {
-		return nil, aerr.Wrap(aerr.APERTURE_STORAGE,
+		return aerr.Wrap(aerr.APERTURE_STORAGE,
 			"engine: failed to load grants for subjects", err)
 	}
 
-	limit := e.boundEnumerateLimit(req.Limit)
 	permCache := make(map[string]*model.Permission, len(grants))
 
 	// The decision context reused per candidate. Object is filled per candidate.
@@ -214,10 +251,10 @@ func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest
 	// from a holder that simply contains nothing visible.
 	restrictTo, open, err := e.referenceRestriction(ctx, req, decReq, subject, grants, permCache)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !open {
-		return []string{}, nil
+		return nil
 	}
 
 	// Gather candidate ids from the ALLOW grants whose action matches.
@@ -229,7 +266,7 @@ func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest
 		}
 		ok, err := e.actionMatches(ctx, g, req.Action, permCache)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !ok {
 			continue
@@ -237,7 +274,7 @@ func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest
 		perm := permCache[g.PermissionID]
 		members, err := e.coverer.members(ctx, decReq, subject, g, perm, query)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for _, m := range members {
 			s := m.String()
@@ -254,7 +291,6 @@ func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest
 		return candidates[i].String() < candidates[j].String()
 	})
 
-	out := make([]string, 0, len(candidates))
 	for _, obj := range candidates {
 		// The reference restriction is a set membership test with no I/O behind it,
 		// so it runs first: a candidate the holder never named cannot be returned
@@ -267,29 +303,31 @@ func (e *Engine) enumerateWithSubjects(ctx context.Context, req EnumerateRequest
 		decReq.Object = obj.String()
 		dec, err := e.evaluate(ctx, decReq, subject, obj, grants, permCache)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !dec.Allow {
 			continue
 		}
-		// The metadata predicate runs on the ALLOWED candidate, before the limit
-		// counts it: filtering after truncation would answer the wrong question
+		// The metadata predicate runs on the ALLOWED candidate, before the caller
+		// ever sees it: filtering after truncation would answer the wrong question
 		// (the matches among the first Limit candidates, not the first Limit
 		// matches).
-		matched, err := e.matchesFields(ctx, obj, req.Fields)
+		md, matched, err := e.matchesFields(ctx, obj, req.Fields)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !matched {
 			continue
 		}
-		out = append(out, obj.String())
-		if len(out) >= limit {
+		more, err := yield(obj, md)
+		if err != nil {
+			return err
+		}
+		if !more {
 			break
 		}
 	}
-	e.warnAtEnumerateBound(ctx, req, limit, len(out))
-	return out, nil
+	return nil
 }
 
 // warnAtEnumerateBound reports, through the engine's logger, that an enumeration
@@ -329,9 +367,14 @@ func (e *Engine) warnAtEnumerateBound(ctx context.Context, req EnumerateRequest,
 }
 
 // matchesFields reports whether obj's metadata satisfies every predicate in
-// fields, per the provider.Filter contract. An empty or nil fields map matches
-// everything WITHOUT touching the metadata source, so an unfiltered enumeration
-// costs exactly what it did before and needs no source wired.
+// fields, per the provider.Filter contract, and returns the bag it read when it
+// read one. An empty or nil fields map matches everything WITHOUT touching the
+// metadata source — returning a nil bag — so an unfiltered enumeration costs
+// exactly what it did before and needs no source wired.
+//
+// The bag is returned rather than discarded so a caller that needs the metadata
+// anyway (Search, which scores it) does not pay a second lookup for the walk's
+// own fetch. A nil bag means "not read here", never "empty".
 //
 // Failure modes are deliberately asymmetric, because an enumeration that
 // silently returns fewer objects reads as "no access" and one that returns more
@@ -346,24 +389,24 @@ func (e *Engine) warnAtEnumerateBound(ctx context.Context, req EnumerateRequest,
 //     ABSENT, and absent never matches, so the candidate is excluded — the
 //     restrictive direction, and the same answer MatchFields gives for an empty
 //     metadata bag.
-func (e *Engine) matchesFields(ctx context.Context, obj identity.Identity, fields map[string]any) (bool, error) {
+func (e *Engine) matchesFields(ctx context.Context, obj identity.Identity, fields map[string]any) (provider.Metadata, bool, error) {
 	if len(fields) == 0 {
-		return true, nil
+		return nil, true, nil
 	}
 	if e.metadata == nil {
-		return false, aerr.WithContext(aerr.APERTURE_PROVIDER_UNREGISTERED,
+		return nil, false, aerr.WithContext(aerr.APERTURE_PROVIDER_UNREGISTERED,
 			"engine: enumerate field predicates need an object-metadata source, none is configured",
 			map[string]any{"object": obj.String()})
 	}
 	md, err := e.metadata.Fetch(ctx, obj)
 	if err != nil {
 		if aerr.CodeOf(err) == aerr.APERTURE_NOT_FOUND {
-			return false, nil
+			return nil, false, nil
 		}
-		return false, err
+		return nil, false, err
 	}
 	// Read-only, transitively: MatchFields never writes to md at any depth.
-	return provider.MatchFields(md, fields), nil
+	return md, provider.MatchFields(md, fields), nil
 }
 
 // boundEnumerateLimit normalises a caller limit against the bound this engine was
@@ -395,7 +438,14 @@ func validateEnumerateRequest(req EnumerateRequest) error {
 	// provider is touched — because a malformed edge says nothing about the data
 	// and everything about the caller. What an edge POINTS AT is resolved later,
 	// where the fail-closed rules apply.
-	for _, edge := range req.References {
+	return validateReferenceEdges(req.References)
+}
+
+// validateReferenceEdges syntax-checks a request's reference edges. It is shared
+// by the enumerate and search validators so an edge that is malformed for one is
+// malformed for the other.
+func validateReferenceEdges(edges []ReferenceEdge) error {
+	for _, edge := range edges {
 		if _, _, err := edge.holder(); err != nil {
 			return err
 		}

@@ -41,6 +41,30 @@ func handleEnumerate(ctx context.Context, s *service.Service, in EnumerateIn) (E
 	return EnumerateOut{Objects: ids}, nil
 }
 
+func handleSearch(ctx context.Context, s *service.Service, in SearchIn) (SearchOut, error) {
+	res, err := s.Search(ctx, in)
+	if err != nil {
+		return SearchOut{}, err
+	}
+	if res == nil {
+		res = []service.SearchMatch{}
+	}
+	return SearchOut{Matches: res}, nil
+}
+
+func handleSearchBatch(ctx context.Context, s *service.Service, in SearchBatchIn) (SearchBatchOut, error) {
+	res := s.SearchBatch(ctx, in.Queries)
+	out := make([]BatchItem[[]service.SearchMatch], len(res))
+	for i, r := range res {
+		ms := r.Result
+		if ms == nil {
+			ms = []service.SearchMatch{}
+		}
+		out[i] = BatchItem[[]service.SearchMatch]{Result: ms, Error: errText(r.Err)}
+	}
+	return SearchBatchOut{Results: out}, nil
+}
+
 func handleExplain(ctx context.Context, s *service.Service, in ExplainIn) (ExplainOut, error) {
 	return s.Explain(ctx, in)
 }

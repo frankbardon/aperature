@@ -104,6 +104,45 @@ agrees with it on every value the metadata value model admits; the two documente
 divergences — `time.Time`/`time.Duration`, and a `uint64` above `math.MaxInt64` —
 are both outside that model.
 
+### The text-match contract
+
+`Fields` answers "which objects hold exactly this value?". The properties that
+make it trustworthy — exact, typed, coercion-free — are precisely what stop it
+answering the other question a caller has: *"which objects are people naming when
+they type `nike`?"*, where `Nike`, `nike`, `Nike, Inc.` and a typo are one intent
+and none of them is an exact value.
+
+`provider.MatchText(md, query, fields)` is that second question, and it lives
+beside `MatchFields` for the same reason: a host that can push a search down into
+its own storage — a SQL `LIKE`, a trigram index, an external search engine — must
+be able to rank the way Aperture would, or the ids it proposes and the ids
+Aperture would have proposed are two different answers to one question.
+`provider.ScoreText` and `provider.NormalizeText` are exported for exactly that.
+
+It reads the same value model, and only the **string** material in it:
+
+| Field value | Searched? |
+|---|---|
+| `"Nike, Inc."` | yes |
+| `["Nike","NIKE Inc"]` | yes — each **element** scored separately, and a match reports the element |
+| `42`, `true`, `nil` | no — filtering by one of those is `Fields`' job |
+| `{"dept":"eng"}` | no — a match *names* its field, and a nested path is not a field name a caller could restrict to |
+
+Both sides are normalised first — lower case, every non-alphanumeric rune a
+separator, runs collapsed — which is what makes `"Nike, Inc."` and `"nike inc"`
+the same string. Each query token then scores its best match against any
+candidate token in descending tiers (exact, prefix, substring, approximate), the
+base score is their mean, and that is scaled by how much of the candidate the
+query accounts for, so `"nike"` ranks `Nike Inc` above `Nike Air Max Collection`.
+Approximate matching uses Damerau-Levenshtein distance, so a transposition counts
+as the one slip it is; tokens shorter than four runes must be spelled exactly or
+be a prefix, because one edit in three characters would let `IBM` answer for
+`IBN`.
+
+Nothing in Aperture ever *decides* on a score. The surface that consumes this —
+`Search` — applies it only to candidates the engine has already decided the
+subject may act on. See [object search](../library/decision-api.md#search).
+
 ## The metadata value model
 
 `Metadata` is an alias, so the *type* constrains nothing. The **shape** of a field

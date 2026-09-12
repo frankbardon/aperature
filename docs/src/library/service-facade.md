@@ -213,6 +213,56 @@ same MCP-reflection reason: `omitempty` on the slice keeps the edges *optional*,
 while `HolderID` and `Field` are required properties of an edge and `HolderType`
 is not.
 
+### `SearchQuery` — resolving a name to an id
+
+`SearchQuery` is `EnumerateQuery` plus a name, and `Search` returns
+`[]SearchMatch`:
+
+```go
+matches, err := svc.Search(ctx, service.SearchQuery{
+	Account: "acme", Principal: "alice", Action: "read",
+	Pattern: "account:acme/brand:*",
+	Query:   "nike",
+	Limit:   5,
+})
+```
+
+| Field | Meaning |
+|---|---|
+| `Query` | The free text. **Required**; an empty query is `APERTURE_INVALID_INPUT`, never "match everything". |
+| `MatchFields` | Metadata field names to restrict matching to. Empty searches every field holding text. |
+| `Fields` / `References` / `Limit` | Exactly what they mean on `EnumerateQuery`, except that `Limit` caps the finished **ranking** rather than the scan. |
+| `MinScore` | The score floor, `[0,1]`; `<= 0` means `provider.DefaultMinScore`. |
+
+Each `SearchMatch` carries `Object`, `Score`, the `Field` and `Value` that
+produced the score, and the object's full `Metadata` inline — so labelling a
+result set costs no further call.
+
+The facade passes every field to the engine **unchanged**. In particular no
+surface normalises the query text: case folding, punctuation stripping and
+tokenising happen in exactly one place, so a name typed at the CLI, sent over
+MCP, and passed in Go score identically.
+
+Two properties are worth restating because they are what make the surface safe:
+candidates are **decided before they are scored**, so a result is always a subset
+of `Enumerate`'s for the same subject; and a score **ranks but never
+authorizes**, so a caller acting on a selected id still `Check`s it. `Search`
+requires `engine.WithMetadata` — without it the answer is
+`APERTURE_PROVIDER_UNREGISTERED`, never an empty list. See
+[the decision API](decision-api.md#search).
+
+### `ObjectMetadata` and `ObjectMetadataBatch`
+
+`ObjectMetadata(objectID)` returns one object's provider metadata;
+`ObjectMetadataBatch(objectIDs)` returns many, aligned by index as
+`[]engine.BatchResult[map[string]any]`, so a malformed or absent id carries its
+own error without failing its siblings. Both require `WithProviders`.
+
+Neither authorizes or filters — they label ids a caller already holds. The path
+that *produces* ids a subject may see is `Enumerate`, or `Search` when the input
+is a name; and since `Search` already returns metadata inline, most callers never
+need the batch at all.
+
 ## Fail-closed rendering
 
 The facade's reason for existing is one shared policy for turning an engine

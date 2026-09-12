@@ -43,12 +43,20 @@ type CheckIn = service.Query
 // EnumerateIn is the input for aperture_enumerate.
 type EnumerateIn = service.EnumerateQuery
 
+// SearchIn is the input for aperture_search.
+type SearchIn = service.SearchQuery
+
 // ExplainIn is the input for aperture_explain.
 type ExplainIn = service.Query
 
 // CheckBatchIn is the input for aperture_check_batch.
 type CheckBatchIn struct {
 	Queries []service.Query `json:"queries" jsonschema:"The authorization questions to decide, in order"`
+}
+
+// SearchBatchIn is the input for aperture_search_batch.
+type SearchBatchIn struct {
+	Queries []service.SearchQuery `json:"queries" jsonschema:"The name-resolution questions to answer, in order"`
 }
 
 // EnumerateBatchIn is the input for aperture_enumerate_batch.
@@ -128,6 +136,13 @@ type EnumerateOut struct {
 	Objects []string `json:"objects" jsonschema:"Object ids the principal may take the action on, within the pattern"`
 }
 
+// SearchOut is the output for aperture_search: the ranked candidates, best
+// first. Each carries the object's metadata inline, so naming what was found
+// costs no further call.
+type SearchOut struct {
+	Matches []service.SearchMatch `json:"matches" jsonschema:"Ranked candidates, best match first. Each is an object the principal may act on; the score ranks, it does not authorize"`
+}
+
 // BatchItem is the JSON-friendly form of engine.BatchResult: a per-item result
 // plus an error STRING (engine.BatchResult carries a Go error, which does not
 // round-trip through JSON). Exactly one of Result / Error is meaningful: when
@@ -145,6 +160,11 @@ type CheckBatchOut struct {
 // EnumerateBatchOut is the output for aperture_enumerate_batch.
 type EnumerateBatchOut struct {
 	Results []BatchItem[[]string] `json:"results" jsonschema:"Per-query object-id lists, aligned with the input queries"`
+}
+
+// SearchBatchOut is the output for aperture_search_batch.
+type SearchBatchOut struct {
+	Results []BatchItem[[]service.SearchMatch] `json:"results" jsonschema:"Per-query ranked candidate lists, aligned with the input queries"`
 }
 
 // ExplainBatchOut is the output for aperture_explain_batch.

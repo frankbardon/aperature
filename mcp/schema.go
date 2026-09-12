@@ -79,6 +79,8 @@ func init() {
 	register(toolmeta.ToolCheckBatch, d(toolmeta.ToolCheckBatch), reflect.TypeFor[CheckBatchIn](), reflect.TypeFor[CheckBatchOut]())
 	register(toolmeta.ToolEnumerate, d(toolmeta.ToolEnumerate), reflect.TypeFor[EnumerateIn](), reflect.TypeFor[EnumerateOut]())
 	register(toolmeta.ToolEnumerateBatch, d(toolmeta.ToolEnumerateBatch), reflect.TypeFor[EnumerateBatchIn](), reflect.TypeFor[EnumerateBatchOut]())
+	register(toolmeta.ToolSearch, d(toolmeta.ToolSearch), reflect.TypeFor[SearchIn](), reflect.TypeFor[SearchOut]())
+	register(toolmeta.ToolSearchBatch, d(toolmeta.ToolSearchBatch), reflect.TypeFor[SearchBatchIn](), reflect.TypeFor[SearchBatchOut]())
 	register(toolmeta.ToolExplain, d(toolmeta.ToolExplain), reflect.TypeFor[ExplainIn](), reflect.TypeFor[ExplainOut]())
 	register(toolmeta.ToolExplainBatch, d(toolmeta.ToolExplainBatch), reflect.TypeFor[ExplainBatchIn](), reflect.TypeFor[ExplainBatchOut]())
 	register(toolmeta.ToolSimulate, d(toolmeta.ToolSimulate), reflect.TypeFor[SimulateIn](), reflect.TypeFor[SimulateOut]())

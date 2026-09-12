@@ -304,6 +304,62 @@ naming it, and the commonest cause is an identity composed in the wrong shape
 
 Full flags: [`enumerate`](../reference/cli.md#aperture-enumerate).
 
+## `search` — find an object by the name a person types
+
+```text
+aperture search [options] <principal> <action> <pattern> <query>
+```
+
+`search` ranks every object under `<pattern>` that `<principal>` may take
+`<action>` on by how well its metadata matches `<query>`, best match first. It is
+the name-to-id lookup a surface does when a question arrives in a person's own
+words.
+
+```bash
+bin/aperture search alice read 'account:acme/brand:*' nike --seed ./catalogue.yaml
+bin/aperture search alice read 'account:acme/brand:*' nike --in label --limit 5 --scores
+```
+
+Every result is one `check` would allow: candidates are **decided before they
+are scored**, by the same walk `enumerate` uses, so the output is always a subset
+of what `enumerate` returns for the same principal, action and pattern. A score
+ranks; it authorizes nothing.
+
+Matching is case- and punctuation-insensitive (`Nike, Inc.` matches `nike inc`)
+and tolerates a typo or a transposition on tokens long enough for one to be
+unambiguous. Only **text** is matched — a string field and the string elements of
+a list field; match a number, bool or date with `--field` instead.
+
+Aperture has no notion of a "label": a label is an ordinary metadata field whose
+name your host chose. Every field holding text is searched by default; `--in`
+names the fields to search, and `--scores` prints the score plus the field and
+value that produced each match — which is what tells a hit on an alias apart
+from a hit on a display name.
+
+```text
+account:acme/brand:3	0.875	label=Nike, Inc.
+account:acme/brand:1	0.800	label=Nike Air Max Collection
+```
+
+`--field` / `--fields-json` and `--via` mean exactly what they mean on
+`enumerate`, and they **compose** with the query: the predicate and the reference
+edge narrow the candidate set, the query ranks what is left. "The brand called
+Nike in dataset X" is one command.
+
+`--min-score` drops weak matches (default `0.4`). Raising it narrows the
+shortlist; it never widens what the principal may see.
+
+`--limit` caps how many **matches** come back — the top of a finished ranking,
+not a bound on the scan, so you get the best N rather than the first N found. The
+scan itself runs to the deployment's `--enumerate-limit` ceiling; a scan that
+fills that ceiling is logged, because a better match may lie past it.
+
+Because it needs object metadata to match against, `search` errors with
+`APERTURE_PROVIDER_UNREGISTERED` against a model that declares no object source —
+an empty list would read as "you may see nothing" and hide the misconfiguration.
+
+Full flags: [`search`](../reference/cli.md#aperture-search).
+
 ## `identifiers` — a type's valid instance ids
 
 ```text

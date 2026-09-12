@@ -49,7 +49,7 @@ var gatedFacadeMethods = []string{
 // list is deliberately short: adding a prefix to it is the moment to ask whether
 // the new handler writes, and if it does, whether the gate reaches it.
 var readOnlyHandlerPrefixes = []string{
-	"handleCheck", "handleEnumerate", "handleExplain", "handleSimulate",
+	"handleCheck", "handleEnumerate", "handleExplain", "handleSearch", "handleSimulate",
 	"handleList", "handleGet", "handleSkills",
 }
 

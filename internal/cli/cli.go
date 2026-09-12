@@ -20,6 +20,7 @@ func NewApp(version string) *ucli.Command {
 			// Decision API.
 			checkCommand(),
 			enumerateCommand(),
+			searchCommand(),
 			explainCommand(),
 			identifiersCommand(),
 			// Mutations (the same facade path the Twirp surface drives).

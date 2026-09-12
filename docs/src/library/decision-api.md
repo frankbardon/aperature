@@ -308,6 +308,102 @@ computes the restriction once, off that path.
 
 `EnumerateBatch` and `EnumerateAs` carry `References` through the same path.
 
+## Search
+
+`Search` resolves a **name** to an id. It is the operation to reach for when a
+question arrives in a person's own words and every step after it needs ids.
+
+```go
+matches, err := eng.Search(ctx, engine.SearchRequest{
+	Account:   "acme",
+	Principal: "alice",
+	Action:    "read",
+	Pattern:   "account:acme/brand:*",
+	Query:     "nike",
+	Limit:     5,
+})
+// matches[0].Object   "account:acme/brand:42"
+// matches[0].Score    0.875
+// matches[0].Field    "label"
+// matches[0].Value    "Nike, Inc."
+// matches[0].Metadata map[string]any{"label": "Nike, Inc.", "sector": "Footwear"}
+```
+
+### It is a ranking over `Enumerate`, not a second answer
+
+`Search` does not re-derive who may see what. It walks the same candidate
+gather, the same deny-overrides decision, the same reference restriction and the
+same `Fields` predicate `Enumerate` walks, and only scores what survived.
+**Decide, then match** — so a score can only ever subtract, and the result is
+always a subset of what `Enumerate` would return for the same subject, action and
+pattern.
+
+That ordering is the feature. Composing the pieces yourself — enumerate a type,
+fetch each id's metadata, match in your own process — puts the *unscoped* set
+across the boundary first and narrows it second, so any bug in your filter turns
+your surface into an oracle for every object in the system.
+
+**`Search` selects; it never authorizes.** A score is a ranking hint for
+whoever is choosing between candidates. Nothing in Aperture reads one, and a
+caller that acts on a selected id still `Check`s it.
+
+### What matches
+
+Matching is case- and punctuation-insensitive (`"Nike, Inc."` matches
+`"nike inc"`) and tolerates a typo or a transposition on tokens long enough for
+one to be unambiguous. Only string material is matched — a string field and the
+string elements of a list field — because filtering by a number, bool or date is
+what `Fields` is for.
+
+Aperture has **no notion of a "label"**: a label is an ordinary metadata field
+whose name your host chose. Every field holding text is searched unless
+`MatchFields` names some, and each match reports the `Field` and `Value` that
+produced it, so a hit on an alias is distinguishable from a hit on a display
+name.
+
+### Options
+
+| Field | Meaning |
+|---|---|
+| `Query` | The free text. **Required** — an empty query is `APERTURE_INVALID_INPUT`, not "match everything". |
+| `MatchFields` | Which metadata fields to match against. Empty searches every field holding text. |
+| `Fields` | The same metadata predicate `EnumerateRequest.Fields` carries. Narrows the candidate set; the query ranks what is left. |
+| `References` | The same reference edges `EnumerateRequest.References` carries, with the same fail-closed rules. |
+| `MinScore` | The score a match must reach, in `[0,1]`. `<= 0` means `provider.DefaultMinScore`. |
+| `Limit` | Caps the returned **matches** — the top of a finished ranking. |
+
+### `Limit` caps the ranking; the bound caps the scan
+
+These are two different numbers. The **scan** runs under the engine's configured
+enumeration bound (`WithEnumerateLimit`), over the same candidate set `Enumerate`
+covers. `Limit` then takes the top of the finished ranking.
+
+Bounding the scan by `Limit` would return the first N objects that matched *at
+all* rather than the N best — an arbitrary prefix with a score column, not a
+ranking.
+
+A scan that comes back holding exactly its bound is warned about through
+`WithLogger`. That hint matters more here than for `Enumerate`: a truncated
+enumeration returns a visibly short list, while a truncated search returns a
+full, confidently ranked shortlist whose best entry may simply be the best among
+the candidates that fit. As with `Enumerate`'s warning it cannot be an assertion
+— a complete set of exactly that size is indistinguishable.
+
+### Requirements and failure modes
+
+`Search` **requires** an object-metadata source (`WithMetadata`), unlike the
+`Fields` predicate, which is only consulted when a request carries one. Without
+it the answer is `APERTURE_PROVIDER_UNREGISTERED` rather than an empty result,
+because an empty result reads as "you may see nothing" and would hide the
+misconfiguration behind a plausible answer.
+
+A principal who is not a member of the account gets an empty result and no error;
+so does an invisible reference holder. A candidate with no metadata row is
+skipped — there is nothing there to name.
+
+`SearchAs` is the impersonation-aware sibling, and `SearchBatch` resolves many
+names in one call.
+
 ## Explain
 
 ```go
@@ -444,14 +540,17 @@ judged against — and stays byte-identical for the same decision.
 |---|---|
 | "May this principal do this one thing?" — an enforcement gate on the hot path. | `Check` |
 | "Which of these objects may this principal act on?" — building a filtered listing or a picker. | `Enumerate` |
+| "Which object is the user *naming*?" — a search box, a chat turn, an agent resolving a name to an id. | `Search` |
 | "Why did that decision come out the way it did?" — a diagnostic, an audit view, a support tool. | `Explain` |
 
 `Check` is the allocation-conscious hot path; reach for it in enforcement.
 `Enumerate` is the most cache-sensitive op and is deliberately bounded — use it to
 answer "what can they see", not as a substitute for repeated `Check`s on a known
-object. `Explain` does the same work as `Check` plus recording the derivation, so
-use it when a human (or a machine) needs to understand the verdict, not on every
-hot-path call.
+object. `Search` is `Enumerate` plus a ranking, so it costs at least as much — reach for
+it when the input is a name and for nothing else; when you already hold the ids,
+`Check` or `Enumerate` is the cheaper question. `Explain` does the same work as
+`Check` plus recording the derivation, so use it when a human (or a machine)
+needs to understand the verdict, not on every hot-path call.
 
 ## Related
 

@@ -652,6 +652,30 @@ metadata so the two cannot drift. The only documented divergences —
 `time.Time`/`time.Duration`, and a `uint64` above `math.MaxInt64` — are outside
 the value model.
 
+## Searching the model: `MatchText`
+
+`Fields` answers "which objects hold exactly this value?". It is exact, typed and
+coercion-free — deliberately, because a predicate that coerced would let
+`Enumerate` select an object a `Check` then denies. That same property makes it
+unable to answer the other question a caller has: "which objects are people
+NAMING when they type `nike`?", where `Nike`, `nike`, `Nike, Inc.` and a typo are
+all one intent and none of them is an exact value.
+
+`provider.MatchText(md, query, fields)` is that second question, and it reads the
+same value model — only the STRING material in it:
+
+| Field shape | Searched? |
+|---|---|
+| **string scalar** | yes |
+| **array** | yes, each string ELEMENT scored separately (so a match reports the element, not the whole list) |
+| number / bool / nil | no — filtering by one of those is `Fields`' job |
+| **object** | no — a match NAMES its field, and a nested path is not a field name a caller could restrict to |
+
+The two are kept apart on purpose, and a search composes them: `Fields` narrows
+the candidate set, the text query ranks what is left. Nothing about a score is a
+decision — see `skills/object-search.md` for the scorer, the floor, and the
+entitlement containment that makes the surface safe.
+
 ## Errors
 
 A violation is **`APERTURE_METADATA_INVALID`**. Its context carries:
