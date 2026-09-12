@@ -234,6 +234,121 @@ func (h *twirpHandler) EnumerateBatch(ctx context.Context, req *rpc.EnumerateBat
 	return &rpc.EnumerateBatchResponse{Results: out}, nil
 }
 
+// searchQuery carries the wire's search question onto the facade's. It reuses
+// the enumerate converters for the halves that are literally the same fields, so
+// a predicate or an edge cannot mean one thing on Enumerate and another on
+// Search.
+//
+// Nothing here normalises the query TEXT. Case folding, punctuation stripping
+// and tokenising happen in exactly one place (provider.NormalizeText, reached
+// through provider.MatchText), so a name typed at the CLI, sent over this wire,
+// and passed in Go all score identically. A surface that folded on the way in
+// would be a second, invisible answer to "what did the user type?".
+func searchQuery(q *rpc.SearchRequest) (service.SearchQuery, error) {
+	fields, err := rpc.FieldsFromWire(q.GetFields())
+	if err != nil {
+		return service.SearchQuery{}, err
+	}
+	return service.SearchQuery{
+		Account:     q.GetAccount(),
+		Principal:   q.GetPrincipal(),
+		Action:      q.GetAction(),
+		Pattern:     q.GetPattern(),
+		Query:       q.GetQuery(),
+		MatchFields: q.GetMatchFields(),
+		Fields:      fields,
+		References:  referenceEdges(q.GetReferences()),
+		MinScore:    q.GetMinScore(),
+		Limit:       int(q.GetLimit()),
+	}, nil
+}
+
+// searchMatches renders the facade's ranked matches onto the wire, preserving
+// order — the ranking IS the payload, so a reordering here would silently
+// discard the whole answer.
+//
+// A match whose metadata cannot be encoded fails the CALL rather than being
+// returned with an empty bag: a client reading `metadata` would otherwise see a
+// legitimately empty-metadata object and a failed encode as the same thing, and
+// would render a match it cannot label as one with nothing to say.
+func searchMatches(in []service.SearchMatch) ([]*rpc.SearchMatch, error) {
+	out := make([]*rpc.SearchMatch, len(in))
+	for i, m := range in {
+		md, err := rpc.FieldsToWire(m.Metadata)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = &rpc.SearchMatch{
+			Object:   m.Object,
+			Score:    m.Score,
+			Field:    m.Field,
+			Value:    m.Value,
+			Metadata: md,
+		}
+	}
+	return out, nil
+}
+
+func (h *twirpHandler) Search(ctx context.Context, req *rpc.SearchRequest) (*rpc.SearchResponse, error) {
+	q, err := searchQuery(req)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	res, err := h.svc.Search(ctx, q)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	matches, err := searchMatches(res)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &rpc.SearchResponse{Matches: matches}, nil
+}
+
+func (h *twirpHandler) SearchBatch(ctx context.Context, req *rpc.SearchBatchRequest) (*rpc.SearchBatchResponse, error) {
+	qs := make([]service.SearchQuery, len(req.Queries))
+	// A malformed predicate is an input-validation failure for THAT query alone,
+	// so it rides in the item's error slot exactly as an engine validation error
+	// does. One bad query never fails the batch, and a query that never ran must
+	// not be silently reported as "no matches" — which on a search would read as
+	// "nothing by that name", a plausible and wrong answer.
+	bad := make([]error, len(req.Queries))
+	for i, q := range req.Queries {
+		query, err := searchQuery(q)
+		if err != nil {
+			bad[i] = err
+			continue
+		}
+		qs[i] = query
+	}
+	results := h.svc.SearchBatch(ctx, qs)
+	out := make([]*rpc.BatchSearch, len(results))
+	for i, r := range results {
+		bs := &rpc.BatchSearch{}
+		err := r.Err
+		if i < len(bad) && bad[i] != nil {
+			// The decode failed, so this item's engine result describes a
+			// zero-valued query, not the caller's. Report the decode error.
+			err = bad[i]
+		}
+		if err == nil {
+			matches, encErr := searchMatches(r.Result)
+			if encErr != nil {
+				err = encErr
+			} else {
+				bs.Matches = matches
+			}
+		}
+		if err != nil {
+			bs.ErrorCode = string(aerr.CodeOf(err))
+			bs.ErrorMessage = err.Error()
+			bs.Matches = nil
+		}
+		out[i] = bs
+	}
+	return &rpc.SearchBatchResponse{Results: out}, nil
+}
+
 func (h *twirpHandler) Explain(ctx context.Context, req *rpc.CheckRequest) (*rpc.ExplainResponse, error) {
 	tr, err := h.svc.Explain(ctx, service.Query{
 		Account: req.Account, Principal: req.Principal, Action: req.Action, Object: req.Object,

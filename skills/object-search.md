@@ -217,10 +217,23 @@ form without breaking every host implementation of the interface.
 |---|---|
 | Library | `service.Search` / `service.SearchBatch`; `engine.Search` / `SearchAs` / `SearchBatch` |
 | CLI | `aperture search <principal> <action> <pattern> <query>`, with `--in`, `--min-score`, `--limit`, `--scores`, plus `--field` / `--fields-json` / `--via` |
+| Twirp/HTTP | `Search` / `SearchBatch` (`SearchRequest` → `SearchResponse`), converters in `internal/server/twirp.go` |
 | MCP | `aperture_search`, `aperture_search_batch` (read-only, like every MCP tool) |
 
-The Twirp/HTTP surface does **not** yet carry `Search`; it is the one surface
-whose addition requires regenerating `internal/wire/rpc` with `make proto`. When
-it lands it must follow the enumerate rows in `CLAUDE.md`'s Update-Demand table:
-the proto field, `internal/server/twirp.go` single **and** batch, and every doc
-that restates the contract.
+The containment property is asserted **on every one of them** — `engine`,
+`service`, `internal/server` and `mcp` each have their own "search never proposes
+what enumerate withholds" test — rather than once at the bottom. That is the same
+reasoning the enumerate reference edge's empty-vs-`NOT_FOUND` split is tested
+per-surface under: a relaxation in one translator is a silent disclosure channel,
+and a test that lives only in the engine would not see it.
+
+Two things the wire adds that the other surfaces do not have to think about:
+
+- **The ranking IS the payload.** `SearchResponse.matches` is ordered, and a
+  translator that reordered it would return the right SET while discarding the
+  whole answer. That is why the order is asserted over a real HTTP round trip
+  rather than in-process.
+- **A match that cannot be encoded fails the call**, rather than returning with
+  an empty `metadata` map. A client cannot tell an object with genuinely empty
+  metadata from one whose bag failed to encode, so the second must not be able to
+  masquerade as the first.

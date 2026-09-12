@@ -356,8 +356,18 @@ rather than `--field` on the CLI — because the two say different things.
 would let a caller think a search had been narrowed when it had only been
 filtered.
 
-The Twirp/HTTP surface does not yet carry `Search` (adding it requires `make
-proto`); the library, CLI and MCP surfaces do.
+| Surface | Spelling |
+|---|---|
+| Twirp (`service.proto`) | `SearchRequest` → `SearchResponse` (`Search`), `SearchBatchRequest` → `SearchBatchResponse` (`SearchBatch`). `query` is field 5; `match_fields` 6; `fields` 7 and `references` 8 reuse the enumerate encodings verbatim, decoded by the same `rpc.FieldsFromWire` / `referenceEdges` converters so a predicate cannot mean one thing on `Enumerate` and another on `Search`. `SearchMatch.metadata` goes back out through `rpc.FieldsToWire` |
+| CLI | `aperture search <principal> <action> <pattern> <query>`; `--in` for `MatchFields`, `--min-score`, `--limit`, `--scores` |
+| MCP | `aperture_search` / `aperture_search_batch`, schema reflected off `service.SearchQuery` |
+
+A match whose metadata fails to encode fails the CALL rather than coming back
+with an empty `metadata` map: a client cannot distinguish an object with
+genuinely empty metadata from one whose bag failed to encode, so the second must
+not be able to masquerade as the first. In the batch form the same failure rides
+in that item's error slot and clears its matches — a query that never ran must
+never read as "nothing by that name".
 
 ## Auth + admin-tier policy
 

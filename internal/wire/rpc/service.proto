@@ -25,6 +25,8 @@ service ApertureService {
   rpc CheckBatch(CheckBatchRequest) returns (CheckBatchResponse);
   rpc Enumerate(EnumerateRequest) returns (EnumerateResponse);
   rpc EnumerateBatch(EnumerateBatchRequest) returns (EnumerateBatchResponse);
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc SearchBatch(SearchBatchRequest) returns (SearchBatchResponse);
   rpc Explain(CheckRequest) returns (ExplainResponse);
   rpc ExplainBatch(CheckBatchRequest) returns (ExplainBatchResponse);
 
@@ -318,6 +320,105 @@ message ReferenceEdge {
 
 message EnumerateResponse {
   repeated string object_ids = 1;
+}
+
+// SearchRequest resolves a NAME to an object id: the objects under `pattern`
+// that `principal` may take `action` on AND whose metadata matches `query`,
+// ranked best first.
+//
+// SECURITY, and the reason this is one call rather than a composition: the
+// candidates are DECIDED before they are scored, by the same walk Enumerate
+// uses, so the result is always a SUBSET of what Enumerate would return for the
+// same subject, action and pattern. Enumerating a type and matching in the
+// client puts the UNSCOPED set across the wire first and narrows it second, and
+// any bug in that client-side filter turns the calling surface into an
+// enumeration oracle for every object in the system.
+//
+// A score RANKS candidates; it is never a permission. A client that acts on a
+// returned id still calls Check.
+message SearchRequest {
+  string account = 1;
+  string principal = 2;
+  string action = 3;
+  string pattern = 4;
+  // query is the free text to match against object metadata. REQUIRED: an empty
+  // query is InvalidArgument, not "match everything" — what it would return is
+  // the subject's whole entitled set, unranked, which is the bulk read this call
+  // exists to replace. That question is Enumerate's.
+  string query = 5;
+  // match_fields OPTIONALLY restricts which metadata fields the query is matched
+  // against. Empty (the default) searches every field carrying string material.
+  //
+  // It names WHERE to look; `fields` below says WHAT to find. They are separate
+  // for that reason, and conflating them would let a caller believe a search had
+  // been narrowed when it had only been filtered.
+  //
+  // Aperture has no notion of a "label": a label is an ordinary metadata field
+  // whose name the HOST chose, so no field is privileged. Name one here, and
+  // read which one actually matched off SearchMatch.field.
+  repeated string match_fields = 6;
+  // fields are OPTIONAL object-metadata predicates, identical in meaning and
+  // encoding to EnumerateRequest.fields — including the google.protobuf.Value
+  // typing caveat documented there. They COMPOSE with query: the predicate
+  // narrows the candidate set, the query ranks what is left.
+  map<string, google.protobuf.Value> fields = 7;
+  // references are OPTIONAL reference edges, identical in meaning to
+  // EnumerateRequest.references and carrying the same fail-closed rules — a
+  // holder the principal may not see yields an EMPTY result and no error.
+  repeated ReferenceEdge references = 8;
+  // min_score is the score a match must reach to be returned, in [0,1]. Zero or
+  // negative means the engine default. Raising it narrows the shortlist; it
+  // never widens what the subject may see.
+  double min_score = 9;
+  // limit caps the number of returned MATCHES — the top of a FINISHED ranking,
+  // not a bound on the scan. The scan covers the same candidate set Enumerate
+  // would at the deployment's enumeration bound; bounding it by limit instead
+  // would return the first N objects that matched at all rather than the N best,
+  // which is not a ranking.
+  int32 limit = 10;
+}
+
+// SearchMatch is one ranked candidate.
+message SearchMatch {
+  // object is the matched object's canonical identity.
+  string object = 1;
+  // score is the match quality in [0,1], 1 being exact once both sides are
+  // normalised. It ranks; nothing authorizes on it.
+  double score = 2;
+  // field is the metadata field whose value produced the score, and value is the
+  // string that was scored — the field's value, or the matching ELEMENT when the
+  // field is a list. Together they are how a client explains a match it renders:
+  // a hit on an alias and a hit on a display name are indistinguishable from the
+  // id alone.
+  string field = 3;
+  string value = 4;
+  // metadata is the object's full metadata bag, exactly as ObjectMetadata would
+  // return it for this id. It rides along so labelling a result set costs no
+  // further round-trip, and it discloses nothing new: the object has already
+  // been decided allowed for this subject.
+  //
+  // It is encoded like EnumerateRequest.fields and carries the same caveat: a
+  // google.protobuf.Value holds a number as a double, so an integer beyond 2^53
+  // loses precision in transit.
+  map<string, google.protobuf.Value> metadata = 5;
+}
+
+message SearchResponse {
+  repeated SearchMatch matches = 1;
+}
+
+message SearchBatchRequest {
+  repeated SearchRequest queries = 1;
+}
+
+message BatchSearch {
+  repeated SearchMatch matches = 1;
+  string error_code = 2;
+  string error_message = 3;
+}
+
+message SearchBatchResponse {
+  repeated BatchSearch results = 1;
 }
 
 message ObjectIdentifiersRequest {
