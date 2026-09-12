@@ -18,7 +18,7 @@ Optional, only if you want the full local gate:
 
 | Tool | Purpose |
 |---|---|
-| `staticcheck` | Static analysis for `make lint`. CI installs it; locally `make lint` degrades to `go vet` when it is absent. |
+| `staticcheck` | Static analysis for `make lint`. CI installs it; locally `make lint` degrades to `go vet` when no usable analyser is on PATH — absent, or present but unable to start. Install it with `go install honnef.co/go/tools/cmd/staticcheck@latest`. |
 | `protoc` + `protoc-gen-go` + `protoc-gen-twirp` | Only to regenerate the RPC layer with `make proto`. The generated code is committed, so you do not need these for a normal build. |
 | `node` | Only to rebuild the vendored Rete.js bundle with `make vendor-rete`. Never required by `build`/`test`/CI. |
 
